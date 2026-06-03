@@ -18,6 +18,7 @@
 #include "src/safety/safety_isr.h"
 #include "src/app/app_params.h"
 #include "src/app/app_http.h"
+#include "src/app/app_light.h"
 
 void setup()
 {
@@ -37,6 +38,7 @@ void setup()
     // Ethernet PHY link-up can take several seconds; widen WDT window then tighten.
     wdt_begin(8000);
     app_init();
+    light_init();
     wdt_begin(1500);
     wdt_feed();
 

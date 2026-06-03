@@ -1,6 +1,7 @@
 // app_http.cpp -- Ethernet init, web server, /api endpoints, HTML dashboard (QM layer).
 
 #include "app_http.h"
+#include "app_light.h"
 #include "app_params.h"
 #include "../safety/safety_monitor.h"
 #include "../safety/safety_stability.h"
@@ -106,6 +107,21 @@ void http_handle(EthernetClient &client)
         }
         body[got] = '\0';
         wdt_feed();
+    }
+
+    // ── POST /light/toggle ────────────────────────────────────────────────────
+    if (is_post && strstr(req, "POST /light/toggle")) {
+        char auth_val[40] = "";
+        { int sc = 0; char ak[32], av[32];
+          while (parse_kv(body, sc, ak, av, 32))
+              if (strcmp(ak, "auth") == 0) { strncpy(auth_val, av, sizeof(auth_val)-1); break; } }
+        if (!ct_token_eq(auth_val, strlen(auth_val))) {
+            client.print("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            return;
+        }
+        light_set(!light_get());
+        client.print("HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        return;
     }
 
     // ── POST /test/toggle-output ──────────────────────────────────────────────
@@ -220,7 +236,7 @@ void http_handle(EthernetClient &client)
             "\"omega\":%.2f,\"roll\":%.2f,\"pitch\":%.2f,"
             "\"roll_b\":%.2f,\"pitch_b\":%.2f,"
             "\"diverge_r\":%.2f,\"diverge_p\":%.2f,"
-            "\"stale_a\":%lu,\"stale_b\":%lu,\"spread\":%.2f}",
+            "\"stale_a\":%lu,\"stale_b\":%lu,\"spread\":%.2f,\"light\":%u}",
             ss.platform_stable ? "true"  : "false",
             ss.output_inhibit  ? "true"  : "false",
             (unsigned)ss.fault_mask, ss.why_str,
@@ -234,7 +250,7 @@ void http_handle(EthernetClient &client)
             (double)fabsf(ss.last_roll_deg  - ss.last_roll_b_deg),
             (double)fabsf(ss.last_pitch_deg - ss.last_pitch_b_deg),
             (unsigned long)ss.comm_stale_a, (unsigned long)ss.comm_stale_b,
-            (double)ss.last_spread_deg);
+            (double)ss.last_spread_deg, (unsigned)light_get());
         char hdr[128];
         snprintf(hdr, sizeof(hdr),
             "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
@@ -279,7 +295,12 @@ void http_handle(EthernetClient &client)
                      "btn.textContent=d.inhibit?'Release Output':'Inhibit Output';"
                      "btn.style.borderColor=d.inhibit?'#f44':'#4af';"
                      "btn.style.color=d.inhibit?'#f44':'#4af';"
-                     "btn.style.background=d.inhibit?'#2a0000':'#234';");
+                     "btn.style.background=d.inhibit?'#2a0000':'#234';"
+                     "var lb=document.getElementById('lightbtn');"
+                     "lb.textContent=d.light?'Light ON':'Light OFF';"
+                     "lb.style.borderColor=d.light?'#4f4':'#4af';"
+                     "lb.style.color=d.light?'#4f4':'#4af';"
+                     "lb.style.background=d.light?'#002200':'#234';");
         wdt_feed();
         client.print("document.querySelectorAll('input[type=number]').forEach(function(e){"
                      "e.style.borderColor='#555';e.style.background='#1a1a1a';});"
@@ -304,10 +325,15 @@ void http_handle(EthernetClient &client)
                      "var i=document.querySelector('input[name=\"'+k+'\"]');"
                      "var c=document.getElementById('cv_'+k);"
                      "if(i)i.value=d[k];if(c)c.textContent=d[k];});});});");
-        // CR-3: token read from data-auth on inhbtn (set server-side); never emitted here.
+        // CR-3: tokens read from data-auth attributes (set server-side); never emitted here.
         client.print("document.getElementById('inhbtn').addEventListener('click',function(){"
                      "var tok=document.getElementById('inhbtn').dataset.auth||'';"
                      "fetch('/test/toggle-output',{method:'POST',"
+                     "headers:{'Content-Type':'application/x-www-form-urlencoded'},"
+                     "body:'auth='+encodeURIComponent(tok)}).catch(function(){});});");
+        client.print("document.getElementById('lightbtn').addEventListener('click',function(){"
+                     "var tok=document.getElementById('lightbtn').dataset.auth||'';"
+                     "fetch('/light/toggle',{method:'POST',"
                      "headers:{'Content-Type':'application/x-www-form-urlencoded'},"
                      "body:'auth='+encodeURIComponent(tok)}).catch(function(){});});");
         wdt_feed();
@@ -408,6 +434,16 @@ void http_handle(EthernetClient &client)
               "suppresses SAFE_OUT_PIN. Never use during deployment.</span></p>",
               CONFIG_AUTH_TOKEN);
           W(ibtn); }
+        { char lbtn[256];
+          snprintf(lbtn, sizeof(lbtn),
+              "<p style='margin:4px 0'>"
+              "<button id='lightbtn' data-auth='%s' "
+              "style='padding:6px 18px;cursor:pointer;border:1px solid #4af;"
+              "color:#4af;background:#234'>Light OFF</button>"
+              " <span style='color:#888;font-size:0.85em'>"
+              "Odin GL remote PWM &mdash; pin 4, open-drain 93.75 Hz</span></p>",
+              CONFIG_AUTH_TOKEN);
+          W(lbtn); }
         wdt_feed(); client.flush(); wdt_feed();
 
         W("<h2>Parameters</h2>"
