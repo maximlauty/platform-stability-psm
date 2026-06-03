@@ -394,6 +394,21 @@ void safety_tick()
             s_whoami_fail_b = 0U;
         }
 
+        // Config register CRC-8 shadow check -- detects SPI corruption of ODR/range settings.
+        // Shadow set by asm_init(); refreshed automatically on imu_recover() → asm_init().
+        static uint8_t s_cfgcrc_fail_a = 0U;
+        static uint8_t s_cfgcrc_fail_b = 0U;
+        if (!asm_verify_config_crc(IMU_A_CS_PIN)) {
+            if (++s_cfgcrc_fail_a >= 3U) fault_set(FAULT_IMU_A_COMM);
+        } else {
+            s_cfgcrc_fail_a = 0U;
+        }
+        if (!asm_verify_config_crc(IMU_B_CS_PIN)) {
+            if (++s_cfgcrc_fail_b >= 3U) fault_set(FAULT_IMU_B_COMM);
+        } else {
+            s_cfgcrc_fail_b = 0U;
+        }
+
         // IMU recovery with exponential backoff
         static uint32_t last_recover_ms  = 0U;
         static uint32_t recover_attempts = 0U;

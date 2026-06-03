@@ -14,6 +14,7 @@ void    emb_write_page  (uint8_t cs, uint8_t page, uint8_t addr, const uint8_t *
 bool    asm_fsm_configure   (uint8_t cs);
 bool    asm_fsm_read_stable (uint8_t cs);
 void    asm_frozen_burst_reset(uint8_t cs);
+bool    asm_verify_config_crc(uint8_t cs);
 bool    asm_read_sensors(uint8_t cs,
                          float &ax_g,  float &ay_g,  float &az_g,
                          float &gx_rs, float &gy_rs, float &gz_rs);

@@ -6,6 +6,33 @@
 #include <SPI.h>
 #include <Arduino.h>
 
+// CRC-8: polynomial 0x07, initial value 0xFF. Used for config register shadow.
+static uint8_t crc8(const uint8_t *buf, uint8_t n)
+{
+    uint8_t crc = 0xFFU;
+    for (uint8_t i = 0U; i < n; i++) {
+        crc ^= buf[i];
+        for (uint8_t b = 0U; b < 8U; b++)
+            crc = (crc & 0x80U) ? (uint8_t)((crc << 1) ^ 0x07U) : (uint8_t)(crc << 1);
+    }
+    return crc;
+}
+
+// Shadowed CRC of {CTRL1_XL, CTRL2_G, CTRL3_C, CTRL4_C} for each IMU.
+// Set at the end of every successful asm_init(); compared by asm_verify_config_crc().
+static uint8_t s_cfg_crc[2] = {0U, 0U};
+
+static uint8_t cfg_snapshot_crc(uint8_t cs)
+{
+    uint8_t cfg[4] = {
+        asm_reg_read(cs, ASM_REG_CTRL1_XL),
+        asm_reg_read(cs, ASM_REG_CTRL2_G),
+        asm_reg_read(cs, ASM_REG_CTRL3_C),
+        asm_reg_read(cs, ASM_REG_CTRL4_C)
+    };
+    return crc8(cfg, 4U);
+}
+
 uint8_t asm_reg_read(uint8_t cs, uint8_t addr)
 {
     SPI1.beginTransaction(SPISettings(ASM_SPI_CLOCK, MSBFIRST, SPI_MODE3));
@@ -78,7 +105,13 @@ bool asm_init(uint8_t cs)
     asm_reg_write(cs, ASM_REG_CTRL1_XL,  ASM_CTRL1_XL_VAL);
     asm_reg_write(cs, ASM_REG_CTRL2_G,   ASM_CTRL2_G_VAL);
     asm_reg_write(cs, ASM_REG_INT1_CTRL, 0x03U);
+    s_cfg_crc[(cs == IMU_A_CS_PIN) ? 0U : 1U] = cfg_snapshot_crc(cs);
     return true;
+}
+
+bool asm_verify_config_crc(uint8_t cs)
+{
+    return cfg_snapshot_crc(cs) == s_cfg_crc[(cs == IMU_A_CS_PIN) ? 0U : 1U];
 }
 
 bool asm_self_test(uint8_t cs)
