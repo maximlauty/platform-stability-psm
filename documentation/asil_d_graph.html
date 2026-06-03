@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PSM — ASIL D Function Graph</title>
+<style>
+:root {
+  --bg:#0c0e14; --surf:#131720; --surf2:#181f2e; --bdr:#1e2535;
+  --txt:#c8d4e8; --mut:#4a6080; --mut2:#6a80a0;
+  --asild:#d4a017; --asilb:#e07020; --qm:#4a90d9; --hw:#607080;
+  --red:#cc2222; --amber:#dd8800; --green:#22aa55; --blue:#4a90d9;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--txt);font-family:system-ui,-apple-system,sans-serif;
+  display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+
+/* ── header ── */
+#hdr{display:flex;align-items:center;gap:14px;padding:8px 16px;
+  background:var(--surf);border-bottom:1px solid var(--bdr);flex-shrink:0;min-height:52px;}
+#hdr-title{font-size:14px;font-weight:700;white-space:nowrap;}
+#hdr-sub{font-size:10px;color:var(--mut2);font-family:monospace;white-space:nowrap;}
+.badge{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;white-space:nowrap;}
+.badge-d{background:#2a1f00;color:var(--asild);border:1px solid #5a3a00;}
+.badge-sil{background:#001f20;color:#30d0c0;border:1px solid #006060;}
+.badge-mil{background:#100020;color:#a060e0;border:1px solid #402060;}
+#hdr-btns{margin-left:auto;display:flex;gap:5px;flex-wrap:wrap;}
+.fbtn{padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;
+  border:1px solid var(--bdr);background:var(--bg);color:var(--mut2);
+  transition:all .15s;white-space:nowrap;}
+.fbtn:hover{color:var(--txt);border-color:var(--mut2);}
+.fbtn.on{border-color:var(--asild);color:var(--asild);background:#1a1400;}
+
+/* ── main split ── */
+#main{display:flex;flex:1;overflow:hidden;}
+#gfx{flex:1;position:relative;overflow:hidden;}
+#gfx svg{width:100%;height:100%;}
+
+/* ── tooltip ── */
+#tip{position:absolute;pointer-events:none;display:none;
+  background:#0d1520;border:1px solid #2a3a50;border-radius:6px;
+  padding:6px 10px;font-size:11px;z-index:30;max-width:220px;line-height:1.5;}
+#tip strong{color:var(--txt);}
+#tip span{color:var(--mut2);}
+
+/* ── sidebar ── */
+#side{width:310px;border-left:1px solid var(--bdr);background:var(--surf);
+  overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px;font-size:11px;flex-shrink:0;}
+.sec-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--mut);
+  font-weight:700;margin-bottom:6px;}
+.card{background:var(--surf2);border:1px solid var(--bdr);border-radius:7px;padding:10px;}
+#nd-name{font-size:13px;font-weight:700;font-family:monospace;color:var(--txt);margin-bottom:4px;}
+#nd-sig{font-size:10px;color:var(--mut2);font-family:monospace;line-height:1.5;margin-bottom:6px;word-break:break-all;}
+#nd-role{font-size:11px;line-height:1.65;color:#9ab0c8;}
+.prop-row{display:flex;gap:6px;margin-bottom:4px;align-items:flex-start;}
+.prop-key{color:var(--mut);min-width:70px;flex-shrink:0;font-size:10px;padding-top:1px;}
+.prop-val{color:var(--txt);font-size:10px;line-height:1.5;}
+.chip{display:inline-block;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:600;
+  margin:1px 2px 1px 0;}
+.chip-red{background:#2a0000;color:#ff6060;border:1px solid #500000;}
+.chip-grn{background:#002a00;color:#60dd60;border:1px solid #005000;}
+.chip-blue{background:#001a30;color:#6aadff;border:1px solid #003060;}
+.chip-amber{background:#1a1000;color:#ddaa30;border:1px solid #403000;}
+.chip-hw{background:#101820;color:#8090a0;border:1px solid #203040;}
+.callee-list{font-family:monospace;font-size:10px;color:#7090b0;line-height:1.8;}
+#nd-hint{color:var(--mut);font-size:12px;text-align:center;padding:20px 0;}
+
+/* ── legend ── */
+#leg{border-top:1px solid var(--bdr);background:var(--surf);padding:6px 14px;
+  display:flex;gap:0;flex-wrap:wrap;flex-shrink:0;align-items:center;}
+.leg-title{font-size:9px;text-transform:uppercase;color:var(--mut);font-weight:700;
+  margin-right:10px;white-space:nowrap;}
+.cp-row{display:flex;align-items:center;gap:5px;padding:3px 8px;border-radius:5px;
+  cursor:pointer;transition:background .12s;margin:1px;}
+.cp-row:hover{background:var(--surf2);}
+.cp-row.active{background:#1a0800;border:1px solid #cc3300;}
+.cp-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0;}
+.cp-id{font-size:9px;font-weight:700;color:var(--mut2);white-space:nowrap;}
+.cp-name{font-size:9px;color:var(--mut);white-space:nowrap;}
+
+/* ── node styles ── */
+.node{cursor:pointer;}
+.node text.lbl{font-size:9px;fill:var(--txt);text-anchor:middle;dominant-baseline:middle;pointer-events:none;font-family:monospace;}
+.node text.asil-badge{font-size:7px;text-anchor:middle;dominant-baseline:middle;pointer-events:none;font-weight:700;}
+.node.dimmed{opacity:0.12;}
+.node.cp-active polygon,.node.cp-active circle,.node.cp-active rect{stroke-width:3!important;}
+
+/* ── edge styles ── */
+.edge{fill:none;transition:opacity .15s;}
+.edge.dimmed{opacity:0.04;}
+.edge.cp-active{opacity:1!important;stroke-width:3!important;}
+.edge-label{font-size:8px;fill:var(--mut);text-anchor:middle;pointer-events:none;}
+
+/* ── scrollbar ── */
+#side::-webkit-scrollbar{width:4px;}
+#side::-webkit-scrollbar-thumb{background:var(--bdr);border-radius:2px;}
+
+/* ── false-HIGH risk rings ── */
+@keyframes riskPulse{0%,100%{opacity:.65}50%{opacity:1}}
+.rring-serious{fill:none;stroke:#dd6622;stroke-width:3;animation:riskPulse 2s ease-in-out infinite;}
+.rring-medium {fill:none;stroke:#aaaa22;stroke-width:2;animation:riskPulse 2.6s ease-in-out infinite;}
+.rring-low    {fill:none;stroke:#336633;stroke-width:1.5;opacity:.5;}
+#gRisk{display:none;pointer-events:none;}
+#gRisk.fh-on{display:block;}
+.fbtn.fh-on{border-color:#dd6622!important;color:#dd6622!important;background:#1a0a00!important;}
+</style>
+</head>
+<body>
+
+<div id="hdr">
+  <div>
+    <div id="hdr-title">Platform Stability Monitor — ASIL D Function Interaction Graph</div>
+    <div id="hdr-sub">Teensy 4.1 · Dual ASM330LHB SPI · 68 functions · 96 edges · ISO 26262 / IEC 61508 / MIL-STD-882E</div>
+  </div>
+  <span class="badge badge-d">ASIL D</span>
+  <span class="badge badge-sil">SIL 3</span>
+  <span class="badge badge-mil">MIL-STD-882E</span>
+  <div id="hdr-btns">
+    <a href="psm_fta.html" target="_blank" class="fbtn" style="text-decoration:none" title="Open MIL-STD-882E Fault Tree Analysis">📋 FTA</a>
+    <button class="fbtn on" id="f-safetyd" onclick="toggleFilter('safety-d',this)">ASIL D</button>
+    <button class="fbtn on" id="f-safetyb" onclick="toggleFilter('safety-b',this)">ASIL B</button>
+    <button class="fbtn on" id="f-app"     onclick="toggleFilter('app',this)">App QM</button>
+    <button class="fbtn on" id="f-hw"      onclick="toggleFilter('hw',this)">Hardware</button>
+    <button class="fbtn on" id="f-isr"     onclick="toggleEdgeFilter('isr-async',this)">ISR Async</button>
+    <button class="fbtn on" id="f-crit"    onclick="toggleEdgeFilter('call-critical',this)">Critical</button>
+    <button class="fbtn"    id="f-fhrisk" onclick="toggleFhRisk(this)" title="Highlight functions that can contribute to false-HIGH output">⚠ False-HIGH Risk</button>
+  </div>
+</div>
+
+<div id="main">
+  <div id="gfx">
+    <svg id="sv"></svg>
+    <div id="tip"></div>
+  </div>
+  <div id="side">
+    <div class="sec-lbl">Node Inspector</div>
+    <div class="card">
+      <div id="nd-detail" style="display:none">
+        <div id="nd-name"></div>
+        <div id="nd-sig"></div>
+        <div id="nd-role"></div>
+        <div style="height:8px"></div>
+        <div id="nd-props"></div>
+        <div style="height:6px"></div>
+        <div class="sec-lbl">Callers</div>
+        <div class="callee-list" id="nd-callers"></div>
+        <div style="height:4px"></div>
+        <div class="sec-lbl">Callees</div>
+        <div class="callee-list" id="nd-callees"></div>
+      </div>
+      <div id="nd-hint">Click any node to inspect its safety role, fault codes, and critical paths.</div>
+    </div>
+
+    <div>
+      <div class="sec-lbl">Node Types</div>
+      <div style="display:flex;flex-direction:column;gap:4px;font-size:10px;">
+        <div style="display:flex;align-items:center;gap:8px;"><svg width="18" height="18"><polygon points="9,2 16,6 16,12 9,16 2,12 2,6" fill="#d4a017" stroke="#d4a017" stroke-width="1"/></svg> ASIL D — Safety Critical</div>
+        <div style="display:flex;align-items:center;gap:8px;"><svg width="18" height="18"><circle cx="9" cy="9" r="7" fill="#e07020"/></svg> ASIL B — Safety Related</div>
+        <div style="display:flex;align-items:center;gap:8px;"><svg width="18" height="18"><rect x="2" y="5" width="14" height="8" rx="2" fill="#4a90d9"/></svg> QM — Application Layer</div>
+        <div style="display:flex;align-items:center;gap:8px;"><svg width="18" height="18"><polygon points="9,2 16,9 9,16 2,9" fill="#607080"/></svg> HW — Hardware Peripheral</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sec-lbl">Edge Types</div>
+      <div style="display:flex;flex-direction:column;gap:4px;font-size:10px;">
+        <div style="display:flex;align-items:center;gap:8px;"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#cc2222" stroke-width="2.5"/></svg> Safety-critical call</div>
+        <div style="display:flex;align-items:center;gap:8px;"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#ff2222" stroke-width="3"/></svg> Integrity gate</div>
+        <div style="display:flex;align-items:center;gap:8px;"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#dd8800" stroke-width="1.5" stroke-dasharray="5,3"/></svg> ISR async</div>
+        <div style="display:flex;align-items:center;gap:8px;"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#22aa55" stroke-width="2"/></svg> Recovery path</div>
+        <div style="display:flex;align-items:center;gap:8px;"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#4a90d9" stroke-width="1.5" stroke-dasharray="7,3"/></svg> Data boundary</div>
+        <div style="display:flex;align-items:center;gap:8px;"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#708090" stroke-width="1.5"/></svg> HW / SPI</div>
+        <div style="display:flex;align-items:center;gap:8px;"><svg width="26" height="8"><line x1="0" y1="4" x2="26" y2="4" stroke="#445566" stroke-width="1"/></svg> Function call</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="leg">
+  <span class="leg-title">Critical Paths →</span>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+// ── NODES ─────────────────────────────────────────────────────────────────────
+const NODES = [
+// Entry
+{id:"setup",label:"setup",file:"platform_stability.ino",layer:"entry",asil:"ASIL D",shape:"hexagon",module:"entry",
+ sig:"void setup()",
+ role:"System initialization entry point per ISO 26262-6. Enforces safety-critical ordering: EEPROM parameters must be loaded and validated before safety_init() so the first ISR tick uses valid thresholds. WDT window is widened to 8 s during Ethernet PHY link-up, then tightened to 1.5 s. ISR is deferred until after app_init() to prevent false FAULT_FROZEN during legitimate initialization latency.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:["CP-9"]},
+
+{id:"loop",label:"loop",file:"platform_stability.ino",layer:"entry",asil:"ASIL D",shape:"hexagon",module:"entry",
+ sig:"void loop()",
+ role:"Bare-metal superloop executing at >1000 Hz unloaded. safety_tick() runs every iteration to service IMU reads, AHRS integration, stability evaluation, and output control. app_tick() services the HTTP/Ethernet stack. WDT is fed inside safety_tick() ensuring the watchdog detects any hang in either path. No RTOS — deterministic single-thread execution ensures no priority inversion.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:[]},
+
+// safety_monitor — ASIL D
+{id:"wdt_begin",label:"wdt_begin",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"void wdt_begin(uint16_t timeout_ms)",
+ role:"Arms RTWDOG3 (iMXRT1062 hardware watchdog) with the specified timeout, clocked from the 1 kHz LPO. Requires the NXP two-write unlock sequence (0xD928C520, 0xB480A602) before any register access. Per ISO 26262 and IEC 61508, an independent hardware watchdog is mandatory to detect software hang faults that the software itself cannot detect.",
+ faultsSets:[],faultsClears:[],mechanisms:["WDT"],critPaths:["CP-9"]},
+
+{id:"wdt_feed",label:"wdt_feed",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"void wdt_feed()",
+ role:"Services RTWDOG3 by writing the CMD32EN refresh word. Must be called within every 1500 ms window. Placed at: start of every loop() iteration, entry of bno_poll(), around IMU recovery delays, and each HTTP flush(). Failure to feed within the window constitutes a detected fault — the processor resets and the system restarts in a known safe state.",
+ faultsSets:[],faultsClears:[],mechanisms:["WDT"],critPaths:[]},
+
+{id:"fault_set",label:"fault_set",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"void fault_set(uint16_t bits)",
+ role:"Sets fault bits in s_fault_mask and simultaneously updates s_fault_mask_inv (bitwise complement) under noInterrupts(). Calls refresh_safety_crc() after update. ISO 26262 ASIL D requires complementary shadow registers (CR-3) to detect single-bit RAM corruption in the fault register itself — a flipped bit in s_fault_mask would be caught at the next fault_shadow_ok() check.",
+ faultsSets:["FAULT_INTEGRITY(0x0400) if shadow corrupted"],faultsClears:[],mechanisms:["CR-3","MA-1"],critPaths:["CP-6"]},
+
+{id:"fault_clr",label:"fault_clr",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"void fault_clr(uint16_t bits)",
+ role:"Clears specified fault bits in s_fault_mask and updates the complementary shadow, under noInterrupts(). Calls refresh_safety_crc(). Only auto-recoverable faults (FAULT_GYRO_RANGE, FAULT_ACCEL_RANGE, FAULT_TIMING, FAULT_DIVERSE, FAULT_OUTPUT) can be cleared this way. FAULT_INTEGRITY requires power cycle — no auto-clear path exists by design.",
+ faultsSets:[],faultsClears:["FAULT_GYRO_RANGE","FAULT_ACCEL_RANGE","FAULT_TIMING","FAULT_DIVERSE","FAULT_OUTPUT"],mechanisms:["CR-3","MA-1"],critPaths:[]},
+
+{id:"fault_reset_all",label:"fault_reset_all",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"void fault_reset_all()",
+ role:"Clears all bits in both s_fault_mask and shadow register. Called exclusively from imu_recover() after a successful IMU re-initialization. This strict gate (only on confirmed hardware recovery) prevents premature fault clearing. Followed by reset_stability_state() to discard any tainted buffer data accumulated during the fault period.",
+ faultsSets:[],faultsClears:["ALL faults on confirmed IMU recovery"],mechanisms:["CR-3","MA-1"],critPaths:["CP-8"]},
+
+{id:"fault_shadow_ok",label:"fault_shadow_ok",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"bool fault_shadow_ok()",
+ role:"Evaluates s_fault_mask XOR s_fault_mask_inv == 0xFF. Any single-bit corruption in either register produces a mismatch. Called as Guard 1 inside evaluate_stability() before any stability decision. A mismatch is treated as FAULT_INTEGRITY (catastrophic), permanently blocking safe output. Satisfies ISO 26262 ASIL D requirement for hardware fault detection in safety-state variables (CR-3).",
+ faultsSets:["FAULT_INTEGRITY(0x0400) on mismatch"],faultsClears:[],mechanisms:["CR-3"],critPaths:["CP-4"]},
+
+{id:"fault_set_from_isr",label:"fault_set_from_isr",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"void fault_set_from_isr(uint16_t bits)",
+ role:"ISR-safe variant of fault_set() without the noInterrupts() guard (already in ISR context at entry). Called from timerISR() for FAULT_TIMING violations. FAULT_FROZEN is NOT set via this function — the ISR drives SAFE_OUT_PIN directly via digitalWriteFast() to achieve sub-260 ms response without involving the fault register, avoiding any race with loop() context.",
+ faultsSets:["FAULT_TIMING(0x0040)"],faultsClears:[],mechanisms:["CR-3","CR-5"],critPaths:["CP-1"]},
+
+{id:"fault_clr_from_isr",label:"fault_clr_from_isr",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"void fault_clr_from_isr(uint16_t bits)",
+ role:"ISR-safe fault clear without noInterrupts(). Used by timerISR() to clear FAULT_TIMING after clean_streak_needed (5) consecutive clean ISR ticks, implementing hysteresis to prevent rapid fault set/clear oscillation during intermittent jitter.",
+ faultsSets:[],faultsClears:["FAULT_TIMING(0x0040) after 5 clean ticks"],mechanisms:["CR-3"],critPaths:[]},
+
+{id:"fault_mask_get",label:"fault_mask_get",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"uint16_t fault_mask_get()",
+ role:"Returns the current s_fault_mask value. Called from effective_faults() and safety layer diagnostic logging. Not ISR-safe — called only from loop() context. Provides a single read point for the fault state, avoiding direct external access to the shadow pair.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:[]},
+
+{id:"crc16_ccitt",label:"crc16_ccitt",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"uint16_t crc16_ccitt(uint16_t crc, uint8_t byte)",
+ role:"Single-byte step of CRC-16/CCITT-FALSE (polynomial 0x1021, init 0xFFFF). Implements the shift-and-XOR algorithm. Hamming Distance 4 guarantees detection of all 1-, 2-, and 3-bit errors in the covered 16-byte region. Building block for compute_safety_crc().",
+ faultsSets:[],faultsClears:[],mechanisms:["MA-1"],critPaths:[]},
+
+{id:"compute_safety_crc",label:"compute_safety_crc",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"uint16_t compute_safety_crc()",
+ role:"Computes CRC-16 CCITT-FALSE over 16 bytes covering s_spike_gyro_count, s_spike_accel_count, s_buf_count, and s_buf_head (4 bytes each, little-endian). These four counters are the inputs to the stability gate decision. Any RAM corruption in these counters would silently corrupt the stability result without CRC protection.",
+ faultsSets:[],faultsClears:[],mechanisms:["MA-1"],critPaths:[]},
+
+{id:"refresh_safety_crc",label:"refresh_safety_crc",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"void refresh_safety_crc()",
+ role:"Recomputes and stores the expected CRC reference value via compute_safety_crc(). Must be called every time any of the four covered variables changes (push_sample, fault_set/clr, reset_stability_state). The stored reference is compared by safety_crc_ok() on the next evaluate_stability() call.",
+ faultsSets:[],faultsClears:[],mechanisms:["MA-1"],critPaths:["CP-6"]},
+
+{id:"safety_crc_ok",label:"safety_crc_ok",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"bool safety_crc_ok()",
+ role:"Recomputes CRC via compute_safety_crc() and compares to the stored reference. Called as Guard 2 inside evaluate_stability() before any stability assertion. A mismatch indicates RAM corruption in the spike counters or buffer pointers, sets FAULT_INTEGRITY, and permanently blocks stable output.",
+ faultsSets:["FAULT_INTEGRITY(0x0400) on CRC mismatch"],faultsClears:[],mechanisms:["MA-1"],critPaths:["CP-4"]},
+
+{id:"ram_march_test",label:"ram_march_test",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"bool ram_march_test()",
+ role:"Executes March C- algorithm over a 128-byte dedicated buffer: 6 phases alternating ascending/descending address order with write-then-read verification. Detects stuck-at-0, stuck-at-1, transition faults, and address decoder coupling faults. Required by IEC 61508 for SIL 2+ RAM integrity at startup. Failure calls fatal() to halt the system.",
+ faultsSets:["calls fatal() → system halt on failure"],faultsClears:[],mechanisms:["RAM March C-"],critPaths:["CP-9"]},
+
+{id:"stack_watermark_update",label:"stack_watermark_update",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"void stack_watermark_update()",
+ role:"Captures current SP register and updates minimum-SP watermark (s_stack_min_sp). Called every 200 ms evaluation period. If s_stack_base minus s_stack_min_sp exceeds STACK_WARN_BYTES (6144), sets FAULT_INTEGRITY. Teensy 4.1 stack is 8 KB; a 6 KB warning leaves a 2 KB guard zone before silent overflow.",
+ faultsSets:["FAULT_INTEGRITY(0x0400) if > 6 KB used"],faultsClears:[],mechanisms:["Stack watermark"],critPaths:[]},
+
+{id:"stack_used_bytes",label:"stack_used_bytes",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"uint32_t stack_used_bytes()",
+ role:"Returns s_stack_base minus current SP — the observed peak stack consumption. Exposed in /api/status JSON for diagnostics. Called by stack_watermark_update() and the HTTP status handler.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:[]},
+
+{id:"stack_base_capture",label:"stack_base_capture",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"void stack_base_capture()",
+ role:"Records current SP as s_stack_base during setup(). Must be called after all setup() local variables are allocated to ensure the baseline reflects the deepest stack extent during initialization. Required before any stack_watermark_update() calls are meaningful.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:["CP-9"]},
+
+{id:"set_safe_output",label:"set_safe_output",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"void set_safe_output(bool stable)",
+ role:"Drives SAFE_OUT_PIN (pin 2) HIGH or LOW, then immediately reads back SAFE_MON_PIN_HW (pin 3) to verify physical output integrity (CR-4). Commanded HIGH but readback LOW → FAULT_OUTPUT (wire/driver fault). Commanded LOW but readback HIGH → FAULT_INTEGRITY (catastrophic: driver stuck HIGH, system must reset). TRUE readback clears FAULT_OUTPUT. Implements ISO 26262 ASIL D output verification.",
+ faultsSets:["FAULT_OUTPUT(0x0010) — wire/driver fault","FAULT_INTEGRITY(0x0400) — driver stuck HIGH (critical)"],
+ faultsClears:["FAULT_OUTPUT(0x0010) on confirmed readback pass"],mechanisms:["CR-4"],critPaths:["CP-5"]},
+
+{id:"fatal",label:"fatal",file:"safety_monitor.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_monitor",
+ sig:"void fatal(const char *msg)",
+ role:"Non-recoverable fault handler: disables all interrupts, drives SAFE_OUT_PIN LOW, enters tight LED-blink loop. System halts — WDT will fire after 1500 ms and reset the MCU into another safety_init() cycle with the RAM march test. Called only from ram_march_test() on hardware fault detection. Represents the fail-safe endpoint for startup integrity failures.",
+ faultsSets:[],faultsClears:[],mechanisms:["Fail-safe halt"],critPaths:["CP-9"]},
+
+// safety_isr — ASIL D
+{id:"timerISR",label:"timerISR",file:"safety_isr.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_isr",
+ sig:"void timerISR()  [833 Hz]",
+ role:"833 Hz ISR registered with Teensy IntervalTimer (FlexTimer/PIT). Three safety functions: (1) DWT cycle counter measurement detects ISR period jitter > ±5% → FAULT_TIMING; (2) increments s_sample_due for loop() to drain; (3) frozen-loop watchdog: if s_loop_alive_token unchanged for 26 consecutive ticks (~31 ms), drives SAFE_OUT_PIN LOW directly via digitalWriteFast() — faster than the 1500 ms WDT. No heap, blocking calls, or I2C in ISR body.",
+ faultsSets:["FAULT_TIMING(0x0040) via fault_set_from_isr","s_forced_unsafe_isr=true → drives output LOW"],
+ faultsClears:[],mechanisms:["CR-5 frozen-loop","ISR timing monitor"],critPaths:["CP-1","CP-7"]},
+
+{id:"imu_recover",label:"imu_recover",file:"safety_isr.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_isr",
+ sig:"bool imu_recover(bool b_only=false)",
+ role:"IMU recovery with exponential back-off (3 s, 6 s, 12 s, 24 s, 30 s max). Sequence: stop IntervalTimer → safe output → hardware IMU reset → SPI re-init → re-enable sensor reports → wait first data (3 s timeout). On success: fault_reset_all() + reset_stability_state() + clears s_forced_unsafe_isr (the ONLY place this sticky flag is cleared). On failure: keeps safe output, increments backoff.",
+ faultsSets:[],faultsClears:["ALL faults on success"],mechanisms:["CR-5","Exponential backoff"],critPaths:["CP-8"]},
+
+{id:"safety_tick",label:"safety_tick",file:"safety_isr.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_isr",
+ sig:"void safety_tick()",
+ role:"Primary safety execution path called every loop() iteration. Feeds WDT, increments loop alive token (frozen-loop keepalive), checks s_forced_unsafe_isr. When s_sample_due > 0: reads both IMUs via SPI, runs dual Mahony AHRS, checks data freshness for COMM faults, validates sensor ranges, pushes sample to window buffer. Every 8th sample: evaluates stability FSM, checks dual-channel divergence, drives safe output.",
+ faultsSets:["FAULT_IMU_A_COMM(0x0001)","FAULT_IMU_B_COMM(0x0002)","FAULT_GYRO_RANGE(0x0004)","FAULT_ACCEL_RANGE(0x0008)","FAULT_DUAL_DIVERGE(0x0100)"],
+ faultsClears:[],mechanisms:["CR-5"],critPaths:["CP-2","CP-3"]},
+
+{id:"safety_init",label:"safety_init",file:"safety_isr.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_isr",
+ sig:"void safety_init()",
+ role:"One-time safety subsystem initialization from setup(). Safety-critical ordering per ISO 26262: (1) GPIO config, (2) SPI/Serial init, (3) RAM march test (halt on failure), (4) DWT enable, (5) SRC_SRSR reset-cause logging, (6) dual IMU init + self-test + FSM program, (7) dual Mahony AHRS init, (8) stability state reset, (9) WDT arm. Any initialization failure propagates to fatal().",
+ faultsSets:["FAULT_SELFTEST(0x0200) on IMU self-test failure","FAULT_INTEGRITY on march failure → fatal()"],
+ faultsClears:[],mechanisms:["RAM march","WDT","IMU self-test"],critPaths:["CP-9"]},
+
+{id:"safety_start_isr",label:"safety_start_isr",file:"safety_isr.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_isr",
+ sig:"void safety_start_isr()",
+ role:"Deferred 833 Hz ISR start: called from setup() AFTER app_init() completes. Ethernet PHY link-up can take several seconds, which would trigger the ISR frozen-loop watchdog (26 ticks = 31 ms) if the timer were started earlier. Deferral isolates initialization latency from the safety monitoring window, preventing false FAULT_FROZEN during legitimate PHY negotiation.",
+ faultsSets:[],faultsClears:[],mechanisms:["CR-5"],critPaths:[]},
+
+// safety_stability — ASIL D
+{id:"evaluate_stability",label:"evaluate_stability",file:"safety_stability.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_stability",
+ sig:"bool evaluate_stability(float tilt_spread)",
+ role:"8-gate safety arbiter implementing ISO 26262 ASIL D output control. All 8 conditions must pass simultaneously: (1) fault_shadow_ok() — shadow register integrity; (2) safety_crc_ok() — CRC-16 over counters; (3) effective_faults()==0 — no active fault bits; (4) instant-hold timer expired; (5) buffer fully populated; (6) gyro spike count within limit; (7) accel spike count within limit; (8) tilt spread within spread_max_deg. Fail-safe: any single gate failure returns false.",
+ faultsSets:["FAULT_INTEGRITY(0x0400) on shadow or CRC failure"],faultsClears:[],
+ mechanisms:["CR-3","CR-4","MA-1","Multi-gate fault detection"],critPaths:["CP-4","CP-5"]},
+
+{id:"push_sample",label:"push_sample",file:"safety_stability.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_stability",
+ sig:"void push_sample(const Tilt &t, float omega_dps, float accel_mag_g)",
+ role:"Writes one sample to the circular tilt and accel_mag buffers at 833/8 = 104 Hz. Maintains O(1) running spike counts: when overwriting a slot, the old spike contribution is decremented first, then the new value is written and its spike contribution added. Updates instant-hold timer on high omega. Calls refresh_safety_crc() after updating s_buf_head and s_buf_count to keep integrity valid.",
+ faultsSets:[],faultsClears:[],mechanisms:["MA-1","O(1) spike tracking"],critPaths:[]},
+
+{id:"reset_stability_state",label:"reset_stability_state",file:"safety_stability.cpp",layer:"safety-d",asil:"ASIL D",shape:"hexagon",module:"safety_stability",
+ sig:"void reset_stability_state()",
+ role:"Clears all stability state: buffer head/count to zero, spike counts to zero, anchor invalidated, FSM state to SFST_INIT, instant-hold timer cleared. Calls refresh_safety_crc() to keep the CRC consistent with the newly zeroed values. Called after IMU recovery to prevent stale or tainted buffer data from contaminating the first post-recovery evaluation.",
+ faultsSets:[],faultsClears:[],mechanisms:["MA-1"],critPaths:["CP-8","CP-9"]},
+
+// safety_stability — ASIL B
+{id:"clamp_f",label:"clamp_f",file:"safety_stability.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_stability",
+ sig:"float clamp_f(float v, float lo, float hi)",
+ role:"Saturating float clamp. Guards against NaN/Inf propagation in tilt and Mahony computations. Any floating-point exception that produces NaN would silently pass all comparison gates without this clamp; with it, NaN maps to the boundary value and the ensuing spike/spread check detects the anomaly.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:[]},
+
+{id:"safe_min_u32",label:"safe_min_u32",file:"safety_stability.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_stability",
+ sig:"uint32_t safe_min_u32(uint32_t a, uint32_t b)",
+ role:"Returns min(a,b) for unsigned 32-bit values. Used to cap window_samples to WINDOW_SAMPLES_MAX without risking integer wrap-around in buffer index arithmetic. A wrap-around could cause the buffer head to exceed the buffer size, corrupting adjacent memory.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:[]},
+
+{id:"g_window_samples",label:"g_window_samples",file:"safety_stability.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_stability",
+ sig:"uint32_t g_window_samples()",
+ role:"Returns g_safety_thresholds.window_s × STABILITY_HZ, capped at WINDOW_SAMPLES_MAX (5×104=520). Single read-point for the current window size, which may change at runtime via HTTP /config POST. Centralizing this prevents inconsistent window_samples values across push_sample, evaluate_stability, and compute_window_tilt_spread.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:[]},
+
+{id:"effective_faults",label:"effective_faults",file:"safety_stability.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_stability",
+ sig:"uint16_t effective_faults()",
+ role:"Returns s_fault_mask with FAULT_IMU_B_COMM (0x0002) masked when s_imu_b_degraded is true. Implements graceful degradation: after IMU-B fails IMU_B_DEGRADE_AFTER (4) times consecutively, the system continues on IMU-A alone. The B-channel COMM fault is masked so it no longer blocks stable output, while all other faults remain enforced.",
+ faultsSets:[],faultsClears:[],mechanisms:["Graceful degradation"],critPaths:[]},
+
+{id:"diverse_stable",label:"diverse_stable",file:"safety_stability.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_stability",
+ sig:"bool diverse_stable()",
+ role:"Diversity check per IEC 61508 diverse redundancy principle: computes mean accelerometer magnitude over the window. If |mean - 1g| > diverse_mean_tol_g (0.1g), sets FAULT_DIVERSE. Detects free-fall (mean ~0g), sustained lateral shock, prolonged tilt >90°, or a sensor that has stopped reporting gravity. Provides independent confirmation that accelerometer physics are consistent with a stationary platform.",
+ faultsSets:["FAULT_DIVERSE(0x0080)"],faultsClears:["FAULT_DIVERSE after 5 clean evaluations"],mechanisms:["Diversity check"],critPaths:[]},
+
+{id:"tilt_distance_deg",label:"tilt_distance_deg",file:"safety_stability.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_stability",
+ sig:"float tilt_distance_deg(const Tilt &a, const Tilt &b)",
+ role:"Euclidean distance in roll-pitch space only. Yaw is explicitly excluded: gyro-integrated yaw accumulates ~0.1 dps bias over the 1–5 s window, which would produce false instability for a platform that is stationary but slowly rotating. Roll and pitch are observable from gravity; yaw is not. Used in compute_window_tilt_spread() and the anchor drift check.",
+ faultsSets:[],faultsClears:[],mechanisms:["Yaw exclusion"],critPaths:[]},
+
+{id:"compute_window_tilt_spread",label:"compute_window_tilt_spread",file:"safety_stability.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_stability",
+ sig:"float compute_window_tilt_spread()",
+ role:"Computes the centroid (mean roll/pitch) of all samples in the window, then returns the maximum Euclidean distance from any sample to that centroid. This centroid-radius metric is order-independent (not biased by oldest or newest sample) and detects oscillatory motion that a simple endpoint comparison would miss. Result compared to spread_max_deg (7.5°) in evaluate_stability().",
+ faultsSets:[],faultsClears:[],mechanisms:["Centroid spread"],critPaths:[]},
+
+// safety_imu — ASIL B
+{id:"asm_reg_read",label:"asm_reg_read",file:"safety_imu.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_imu",
+ sig:"uint8_t asm_reg_read(uint8_t cs, uint8_t addr)",
+ role:"Single-register read from ASM330LHB via SPI1. Sets address MSB to 1 (ASM_SPI_READ_BIT=0x80) per ASM330LHB SPI protocol. Asserts CS pin, transfers 2 bytes (addr+dummy, read result), deasserts CS. Used for WHO_AM_I verification and STATUS_REG polling.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:[]},
+
+{id:"asm_reg_write",label:"asm_reg_write",file:"safety_imu.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_imu",
+ sig:"void asm_reg_write(uint8_t cs, uint8_t addr, uint8_t val)",
+ role:"Single-register write to ASM330LHB. Address MSB = 0 (write). Asserts CS, transfers addr then val, deasserts CS. Used for configuration registers (CTRL1_XL, CTRL2_G, CTRL3_C, CTRL4_C), software reset, and embedded memory page access.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:[]},
+
+{id:"asm_burst_read",label:"asm_burst_read",file:"safety_imu.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_imu",
+ sig:"void asm_burst_read(uint8_t cs, uint8_t start_addr, uint8_t *buf, uint8_t len)",
+ role:"Multi-byte burst read using ASM330LHB auto-increment (IF_INC bit in CTRL3_C). Reads len bytes from start_addr in one CS assertion, minimizing bus overhead and ensuring temporal consistency across register bytes. Used to read 6-byte accel block (OUTX_L_A) and 6-byte gyro block (OUTX_L_G) in two bursts.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:["CP-2"]},
+
+{id:"asm_sw_reset",label:"asm_sw_reset",file:"safety_imu.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_imu",
+ sig:"void asm_sw_reset(uint8_t cs)",
+ role:"Issues software reset to ASM330LHB by writing SW_RESET bit in CTRL3_C, followed by 10 ms delay for device re-initialization. Called at start of asm_init() to ensure all registers are in known reset state before configuration, preventing configuration errors from a previous session.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:[]},
+
+{id:"asm_init",label:"asm_init",file:"safety_imu.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_imu",
+ sig:"bool asm_init(uint8_t cs)",
+ role:"Initializes one ASM330LHB IMU: software reset → WHO_AM_I check (expected 0x6B) → configure ODR (833 Hz for both accel and gyro), range (±2g accel, ±500 dps gyro), BDU (block data update), IF_INC (auto-increment), DRDY_MASK. Returns false if WHO_AM_I mismatches — prevents operating with a misidentified or absent sensor.",
+ faultsSets:[],faultsClears:[],mechanisms:["WHO_AM_I verification"],critPaths:["CP-8","CP-9"]},
+
+{id:"asm_self_test",label:"asm_self_test",file:"safety_imu.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_imu",
+ sig:"bool asm_self_test(uint8_t cs)",
+ role:"ASM330LHB built-in self-test per ST application note AN4508. Enables positive self-test mode via CTRL5_C, reads ST samples, disables ST, reads baseline samples, checks delta against ST limits (accel: 0.1–1.7g per axis; gyro: 150–700 dps per axis). Sets FAULT_SELFTEST on any axis failure. Required by ISO 26262 for hardware-level fault detection at startup.",
+ faultsSets:["FAULT_SELFTEST(0x0200)"],faultsClears:[],mechanisms:["HW self-test"],critPaths:["CP-9"]},
+
+{id:"emb_write_page",label:"emb_write_page",file:"safety_imu.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_imu",
+ sig:"void emb_write_page(uint8_t cs, uint8_t page, uint8_t addr, const uint8_t *data, uint8_t len)",
+ role:"Writes to ASM330LHB embedded memory (FSM program pages) via FUNC_CFG_ACCESS + PAGE_SEL + PAGE_ADDRESS + PAGE_VALUE registers. Required to upload the custom FSM stability detection program. Follows the page-access sequence in ST UM2294. The FSM program runs on the IMU's Cortex-M0+ at 833 Hz, independent of the Teensy — providing a diverse hardware safety channel.",
+ faultsSets:[],faultsClears:[],mechanisms:["Embedded FSM upload"],critPaths:[]},
+
+{id:"asm_fsm_configure",label:"asm_fsm_configure",file:"safety_imu.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_imu",
+ sig:"bool asm_fsm_configure(uint8_t cs)",
+ role:"Uploads the ASM330LHB Finite State Machine program that implements hardware-level stability detection on the IMU's embedded processor. The FSM result (read via asm_fsm_read_stable) provides a diverse channel: if the hardware FSM and software stability algorithm disagree, FAULT_DUAL_DIVERGE is set. This implements ISO 26262 diverse redundancy for the stability decision.",
+ faultsSets:[],faultsClears:[],mechanisms:["Hardware diversity channel"],critPaths:[]},
+
+{id:"asm_fsm_read_stable",label:"asm_fsm_read_stable",file:"safety_imu.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_imu",
+ sig:"bool asm_fsm_read_stable(uint8_t cs)",
+ role:"Reads FSM_STATUS_A register to obtain the IMU's internal FSM stability verdict. This hardware result is compared to the software evaluate_stability() result every evaluation period. Disagreement sets FAULT_DUAL_DIVERGE (0x0100), providing cross-channel validation between the software AHRS+window algorithm and the independent hardware FSM.",
+ faultsSets:[],faultsClears:[],mechanisms:["Diverse hardware channel"],critPaths:[]},
+
+{id:"asm_frozen_burst_reset",label:"asm_frozen_burst_reset",file:"safety_imu.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_imu",
+ sig:"void asm_frozen_burst_reset(uint8_t cs)",
+ role:"Clears ASM330LHB burst read state machine by issuing FROZEN_BURST_TICKS (5) dummy SPI clock cycles to flush the shift register. Called when a burst read was interrupted (e.g., WDT feed mid-transfer). Prevents the next legitimate burst read from receiving stale partial data, which would cause corrupted sensor readings without being detectable.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:[]},
+
+{id:"asm_read_sensors",label:"asm_read_sensors",file:"safety_imu.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_imu",
+ sig:"bool asm_read_sensors(uint8_t cs, float &ax_g, float &ay_g, float &az_g, float &gx_rs, float &gy_rs, float &gz_rs)",
+ role:"Polls STATUS_REG DRDY flags, then burst-reads 6-byte accel block (OUTX_L_A) and 6-byte gyro block (OUTX_L_G). Converts raw 16-bit signed values to g and rad/s using ASM_ACCEL_SENS_G (0.000061 g/LSB) and ASM_GYRO_SENS_DPS (0.01750 dps/LSB). Returns false if no new data ready (DRDY not set), allowing the caller to track data staleness for FAULT_IMU_A/B_COMM.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:["CP-2"]},
+
+// safety_ahrs — ASIL B
+{id:"mahony_init",label:"mahony_init",file:"safety_ahrs.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_ahrs",
+ sig:"void mahony_init(Mahony &m)",
+ role:"Initializes Mahony complementary filter state to identity quaternion (1,0,0,0) and zero integral error terms. Called once per IMU channel at safety_init() and again after each imu_recover(). Re-initialization after recovery prevents quaternion state from a fault period (potentially corrupted by erratic IMU data) from contaminating post-recovery estimates.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:["CP-8","CP-9"]},
+
+{id:"mahony_update",label:"mahony_update",file:"safety_ahrs.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_ahrs",
+ sig:"void mahony_update(Mahony &m, float gx, float gy, float gz, float ax, float ay, float az)",
+ role:"Mahony complementary AHRS filter at 833 Hz. Normalizes accelerometer vector, estimates gravity direction from current quaternion, computes cross-product error between estimated and measured gravity, applies PI correction (Kp=2.0, Ki=0.005) to gyro rates, integrates quaternion. No magnetometer — yaw is observable only via gyro integration and accumulates ~0.1 dps bias drift over time (excluded from stability metric).",
+ faultsSets:[],faultsClears:[],mechanisms:["Complementary filter"],critPaths:["CP-3"]},
+
+{id:"mahony_to_tilt",label:"mahony_to_tilt",file:"safety_ahrs.cpp",layer:"safety-b",asil:"ASIL B",shape:"circle",module:"safety_ahrs",
+ sig:"void mahony_to_tilt(const Mahony &m, float &roll_deg, float &pitch_deg)",
+ role:"Extracts roll and pitch from the Mahony quaternion via ZYX Euler decomposition: roll = atan2(2(qw·qx + qy·qz), 1−2(qx²+qy²)); pitch = asin(2(qw·qy − qz·qx)). Yaw is not returned — intentionally discarded. Output in degrees, fed to push_sample() for the stability window.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:["CP-3"]},
+
+// app_params — QM
+{id:"params_valid",label:"params_valid",file:"app_params.cpp",layer:"app",asil:"QM",shape:"rect",module:"app_params",
+ sig:"bool params_valid(const Params &p)",
+ role:"Validates a Params struct at the App/Safety boundary: checks magic (0xBE4F0002) and version (3), verifies all float fields are finite via isfinite() (NaN silently passes all < comparisons, so finiteness must be checked explicitly), validates all fields against safety-bound ranges. Invalid params are rejected before reaching the safety layer. Called on EEPROM load and before every /config POST update.",
+ faultsSets:[],faultsClears:[],mechanisms:["Parameter validation","NaN guard"],critPaths:[]},
+
+{id:"params_load",label:"params_load",file:"app_params.cpp",layer:"app",asil:"QM",shape:"rect",module:"app_params",
+ sig:"bool params_load()",
+ role:"Reads Params struct from EEPROM address 0 using EEPROM.get(). Calls params_valid() — if invalid (magic/version mismatch, out-of-range values, NaN), loads PARAMS_DEFAULT instead. Returns true if EEPROM was valid. Must be called before safety_init() so g_safety_thresholds contains valid thresholds for the first ISR tick.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:[]},
+
+{id:"params_save",label:"params_save",file:"app_params.cpp",layer:"app",asil:"QM",shape:"rect",module:"app_params",
+ sig:"void params_save()",
+ role:"Writes current g_params to EEPROM address 0 via EEPROM.put(). Feeds WDT before and after — flash write latency is several milliseconds, well within the 1500 ms window. Called from http_handle() only after successful authentication and params_valid() confirmation, preventing untrusted or malformed parameters from being persisted.",
+ faultsSets:[],faultsClears:[],mechanisms:["Auth gate","Param validation"],critPaths:[]},
+
+{id:"app_publish_thresholds",label:"app_publish_thresholds",file:"app_params.cpp",layer:"app",asil:"QM",shape:"rect",module:"app_params",
+ sig:"void app_publish_thresholds()",
+ role:"The sole App→Safety data boundary: copies validated g_params fields to volatile g_safety_thresholds. This is the only point where QM application code can influence the ASIL D safety layer. Direction is strictly one-way — the safety layer reads g_safety_thresholds but never writes it. After copy, calls refresh_safety_crc() to keep the CRC reference consistent with any updated window/spike thresholds.",
+ faultsSets:[],faultsClears:[],mechanisms:["App→Safety boundary (one-way)","MA-1"],critPaths:[]},
+
+// app_http — QM
+{id:"app_init",label:"app_init",file:"app_http.cpp",layer:"app",asil:"QM",shape:"rect",module:"app_http",
+ sig:"void app_init()",
+ role:"Initializes QNEthernet stack with static IP 192.168.168.71/24 and starts EthernetServer on port 80. PHY link-up can take several seconds (Ethernet MAC negotiation). The WDT window is widened to 8000 ms by setup() before calling app_init() and restored to 1500 ms immediately after, preventing a false WDT reset during legitimate PHY initialization. Network is non-critical; failure does not affect safety output.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:[]},
+
+{id:"app_tick",label:"app_tick",file:"app_http.cpp",layer:"app",asil:"QM",shape:"rect",module:"app_http",
+ sig:"void app_tick()",
+ role:"Non-blocking HTTP server tick: calls Ethernet.loop() for lwIP stack maintenance, checks for new client connections on port 80, dispatches to http_handle() with 500 ms idle timeout. Prints 1 Hz heartbeat to Serial with stability status, fault mask, and hang checkpoint. WDT fed inside http_handle(). Network congestion cannot block the safety loop because app_tick() uses non-blocking I/O.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:[]},
+
+{id:"parse_kv",label:"parse_kv",file:"app_http.cpp",layer:"app",asil:"QM",shape:"rect",module:"app_http",
+ sig:"bool parse_kv(const char *body, int &pos, char *key, char *val, int kvsz)",
+ role:"Parses one URL-encoded key=value pair from an HTTP POST body, advancing the position pointer. Used by http_handle() to extract auth token and individual parameter fields from /config POST requests. Bounded by kvsz to prevent buffer overflow from malformed POST bodies.",
+ faultsSets:[],faultsClears:[],mechanisms:["Bounded parsing"],critPaths:[]},
+
+{id:"http_handle",label:"http_handle",file:"app_http.cpp",layer:"app",asil:"QM",shape:"rect",module:"app_http",
+ sig:"void http_handle(EthernetClient &client)",
+ role:"HTTP request dispatcher: GET / (HTML dashboard), GET /api/status (JSON stability state), GET /api/params (current thresholds), GET /api/js (polling JS + auth token), POST /config (validate + save params, requires auth token match), POST /test/toggle-output (inhibit physical output for bench testing, requires auth). Returns HTTP 403 on auth failure. Auth token is CONFIG_AUTH_TOKEN — must be changed from default before deployment.",
+ faultsSets:[],faultsClears:[],mechanisms:["Auth gate","Parameter validation"],critPaths:[]},
+
+// Hardware
+{id:"RTWDOG3",label:"RTWDOG3",file:"iMXRT1062 HW",layer:"hw",asil:"HW",shape:"diamond",module:"hw",
+ sig:"RTWDOG3 — iMXRT1062 internal watchdog",
+ role:"Hardware watchdog timer clocked from 1 kHz LPO (Low-Power Oscillator), independent of the main CPU clock. If not serviced within 1500 ms, forces MCU reset regardless of software state. The LPO independence means CPU clock failures (PLL loss) do not prevent watchdog operation. Required by ISO 26262 as an independent hardware safety mechanism.",
+ faultsSets:[],faultsClears:[],mechanisms:["Independent HW watchdog"],critPaths:[]},
+
+{id:"SPI1",label:"SPI1",file:"iMXRT1062 HW",layer:"hw",asil:"HW",shape:"diamond",module:"hw",
+ sig:"SPI1 — iMXRT1062 LPSPI1 peripheral",
+ role:"iMXRT1062 LPSPI1 peripheral operating at 4 MHz, 8-bit mode. Shared bus to both ASM330LHB IMUs with independent CS pins (IMU_A: pin 10, IMU_B: pin 9). 4 MHz is well within the ASM330LHB 10 MHz SPI limit while providing adequate margin for cable inductance. Dual-CS architecture allows independent access to each IMU.",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:["CP-2"]},
+
+{id:"IMU_A",label:"IMU_A",file:"ASM330LHB",layer:"hw",asil:"HW",shape:"diamond",module:"hw",
+ sig:"IMU_A — ASM330LHB (primary), CS=10",
+ role:"Primary ASM330LHB 6-axis IMU (accel + gyro). 833 Hz ODR, ±2g accel, ±500 dps gyro. On-chip Finite State Machine (FSM) programmed for hardware-level stability detection as a diverse safety channel. Automotive-grade (-40 to +105°C). All safety decisions are derived primarily from IMU_A data; IMU_B is the diversity channel.",
+ faultsSets:[],faultsClears:[],mechanisms:["Primary IMU","Hardware FSM"],critPaths:["CP-2"]},
+
+{id:"IMU_B",label:"IMU_B",file:"ASM330LHB",layer:"hw",asil:"HW",shape:"diamond",module:"hw",
+ sig:"IMU_B — ASM330LHB (diversity), CS=9",
+ role:"Diversity ASM330LHB IMU providing a second independent sensor channel. IMU_B readings are used for dual-channel divergence detection (FAULT_DUAL_DIVERGE when tilt difference > DUAL_DIVERGE_DEG=5°). After IMU_B_DEGRADE_AFTER (4) consecutive failures, IMU_B is marked degraded and the system continues on IMU_A alone (FAULT_IMU_B_COMM masked by effective_faults).",
+ faultsSets:[],faultsClears:[],mechanisms:["Diverse redundancy"],critPaths:[]},
+
+{id:"ARM_DWT",label:"ARM_DWT",file:"ARM Cortex-M7 HW",layer:"hw",asil:"HW",shape:"diamond",module:"hw",
+ sig:"ARM_DWT_CYCCNT — 600 MHz cycle counter",
+ role:"ARM Cortex-M7 Data Watchpoint and Trace (DWT) cycle counter running at 600 MHz (CPU clock). Read by timerISR() at each ISR entry to measure the inter-ISR interval. Expected interval: 600,000,000/833 = 720,288 cycles ±5% (36,014 cycles). Jitter beyond this indicates timer misconfiguration or interrupt priority inversion, triggering FAULT_TIMING.",
+ faultsSets:[],faultsClears:[],mechanisms:["ISR timing monitor"],critPaths:["CP-1"]},
+
+{id:"SAFE_OUT_PIN",label:"SAFE_OUT_PIN",file:"GPIO pin 2",layer:"hw",asil:"HW",shape:"diamond",module:"hw",
+ sig:"SAFE_OUT_PIN — GPIO pin 2 (output)",
+ role:"Primary safety output: driven HIGH when platform is confirmed stable, LOW in all other states. Connected to external safety system via 100Ω ESD series resistor. HIGH state requires all 8 evaluate_stability() gates to pass simultaneously. Can be driven LOW by either the main loop (set_safe_output) or the ISR frozen-loop watchdog (timerISR, via digitalWriteFast) — the ISR path is faster (~31 ms vs 1500 ms WDT).",
+ faultsSets:[],faultsClears:[],mechanisms:["Safety output","Fail-safe LOW default"],critPaths:["CP-5","CP-7"]},
+
+{id:"SAFE_MON_PIN_HW",label:"SAFE_MON",file:"GPIO pin 3",layer:"hw",asil:"HW",shape:"diamond",module:"hw",
+ sig:"SAFE_MON_PIN_HW — GPIO pin 3 (INPUT_PULLDOWN)",
+ role:"Independent output readback input wired to the SAFE_OUT_PIN net via ≤100Ω (ESD only, NOT 10kΩ — a 10kΩ divider against the internal 10kΩ pull-down would prevent valid HIGH logic level). Read by set_safe_output() after each drive to verify physical output matches commanded state. Detects stuck-at faults in the GPIO driver circuit that software state alone cannot detect. Implements CR-4.",
+ faultsSets:[],faultsClears:[],mechanisms:["CR-4 output readback","Independent verification"],critPaths:["CP-5"]},
+
+{id:"EEPROM",label:"EEPROM",file:"Teensy FlexNVM",layer:"hw",asil:"HW",shape:"diamond",module:"hw",
+ sig:"EEPROM — iMXRT1062 FlexNVM emulation",
+ role:"Non-volatile parameter storage implemented as FlexNVM emulation by Teensyduino. Stores the Params struct (magic + version + 16 threshold fields) at address 0. Parameters are validated by params_valid() on every load — corrupted or version-mismatched EEPROM causes automatic fallback to safe defaults, preventing invalid thresholds from reaching the safety layer.",
+ faultsSets:[],faultsClears:[],mechanisms:["NVM parameter persistence","Fallback to safe defaults"],critPaths:[]},
+
+{id:"Ethernet_MAC",label:"Ethernet",file:"Teensy ENET",layer:"hw",asil:"HW",shape:"diamond",module:"hw",
+ sig:"Ethernet_MAC — Teensy 4.1 ENET + QNEthernet",
+ role:"Built-in iMXRT1062 Ethernet MAC with external PHY, driven by QNEthernet (lwIP-based). Static IP 192.168.168.71/24, port 80. Non-critical to safety operation — Ethernet failure does not affect SAFE_OUT_PIN. Provides web dashboard and REST API for parameter configuration and status monitoring. PHY link-up latency is the reason for the 8 s WDT window during app_init().",
+ faultsSets:[],faultsClears:[],mechanisms:[],critPaths:[]},
+
+{id:"IntervalTimer",label:"IntervalTimer",file:"Teensy HW Timer",layer:"hw",asil:"HW",shape:"diamond",module:"hw",
+ sig:"IntervalTimer — iMXRT1062 PIT/FlexTimer",
+ role:"Teensy IntervalTimer backed by iMXRT1062 PIT/FlexTimer peripheral. Configured for 833 Hz (1200 µs period) to match the ASM330LHB ODR. Fires timerISR() at precisely 833 Hz. Stopped during imu_recover() to prevent ISR from executing during IMU re-initialization (which takes >300 ms) and restarted after successful recovery. Safety_start_isr() defers the first start until after Ethernet init.",
+ faultsSets:[],faultsClears:[],mechanisms:["833 Hz ISR source"],critPaths:["CP-1","CP-7"]}
+];
+
+// ── EDGES ─────────────────────────────────────────────────────────────────────
+const EDGES = [
+// setup calls
+{source:"setup",target:"params_load",type:"call",label:"load EEPROM",critPaths:[]},
+{source:"setup",target:"app_publish_thresholds",type:"data-boundary",label:"publish thresholds",critPaths:[]},
+{source:"setup",target:"safety_init",type:"call-critical",label:"safety init",critPaths:["CP-9"]},
+{source:"setup",target:"wdt_begin",type:"call-critical",label:"arm WDT 8s",critPaths:["CP-9"]},
+{source:"setup",target:"app_init",type:"call",label:"init Ethernet",critPaths:[]},
+{source:"setup",target:"wdt_feed",type:"call",label:"feed WDT",critPaths:[]},
+{source:"setup",target:"safety_start_isr",type:"call-critical",label:"start ISR",critPaths:[]},
+{source:"setup",target:"stack_base_capture",type:"call-critical",label:"capture SP",critPaths:["CP-9"]},
+// loop calls
+{source:"loop",target:"safety_tick",type:"call-critical",label:"safety tick",critPaths:[]},
+{source:"loop",target:"app_tick",type:"call",label:"app tick",critPaths:[]},
+// safety_init
+{source:"safety_init",target:"ram_march_test",type:"call-critical",label:"RAM march",critPaths:["CP-9"]},
+{source:"safety_init",target:"wdt_begin",type:"call-critical",label:"arm WDT 1.5s",critPaths:["CP-9"]},
+{source:"safety_init",target:"asm_init",type:"call-critical",label:"init IMU A/B",critPaths:["CP-9"]},
+{source:"safety_init",target:"asm_self_test",type:"call-critical",label:"self-test",critPaths:["CP-9"]},
+{source:"safety_init",target:"asm_fsm_configure",type:"call",label:"FSM program",critPaths:[]},
+{source:"safety_init",target:"mahony_init",type:"call",label:"init AHRS",critPaths:[]},
+{source:"safety_init",target:"reset_stability_state",type:"call",label:"clear state",critPaths:[]},
+// safety_start_isr
+{source:"safety_start_isr",target:"IntervalTimer",type:"hw-write",label:"start 833 Hz",critPaths:[]},
+// IntervalTimer fires ISR
+{source:"IntervalTimer",target:"timerISR",type:"isr-async",label:"833 Hz tick",critPaths:["CP-1","CP-7"]},
+// timerISR
+{source:"timerISR",target:"ARM_DWT",type:"hw-write",label:"DWT delta (CP-1)",critPaths:["CP-1"]},
+{source:"timerISR",target:"fault_set_from_isr",type:"isr-async",label:"FAULT_TIMING",critPaths:["CP-1"]},
+{source:"timerISR",target:"SAFE_OUT_PIN",type:"hw-write",label:"frozen→LOW (CR-5)",critPaths:["CP-7"]},
+{source:"timerISR",target:"fault_clr_from_isr",type:"isr-async",label:"clr after 5 clean",critPaths:[]},
+// safety_tick
+{source:"safety_tick",target:"wdt_feed",type:"call-critical",label:"feed WDT",critPaths:[]},
+{source:"safety_tick",target:"asm_read_sensors",type:"call-critical",label:"read IMU A/B",critPaths:["CP-2"]},
+{source:"safety_tick",target:"asm_fsm_read_stable",type:"call",label:"HW FSM status",critPaths:[]},
+{source:"safety_tick",target:"mahony_update",type:"call-critical",label:"AHRS update",critPaths:["CP-3"]},
+{source:"safety_tick",target:"mahony_to_tilt",type:"call-critical",label:"extract tilt",critPaths:["CP-3"]},
+{source:"safety_tick",target:"push_sample",type:"call-critical",label:"buffer sample",critPaths:[]},
+{source:"safety_tick",target:"compute_window_tilt_spread",type:"call",label:"spread calc",critPaths:[]},
+{source:"safety_tick",target:"diverse_stable",type:"call",label:"diversity check",critPaths:[]},
+{source:"safety_tick",target:"evaluate_stability",type:"call-critical",label:"stability gate",critPaths:["CP-4","CP-5"]},
+{source:"safety_tick",target:"set_safe_output",type:"call-critical",label:"drive output",critPaths:["CP-5"]},
+{source:"safety_tick",target:"stack_watermark_update",type:"call",label:"stack check",critPaths:[]},
+{source:"safety_tick",target:"imu_recover",type:"call-recovery",label:"recovery seq",critPaths:["CP-8"]},
+{source:"safety_tick",target:"fault_set",type:"call-critical",label:"set COMM/RANGE fault",critPaths:[]},
+// evaluate_stability
+{source:"evaluate_stability",target:"fault_shadow_ok",type:"integrity-gate",label:"Guard 1: shadow",critPaths:["CP-4"]},
+{source:"evaluate_stability",target:"safety_crc_ok",type:"integrity-gate",label:"Guard 2: CRC-16",critPaths:["CP-4"]},
+{source:"evaluate_stability",target:"effective_faults",type:"call",label:"check faults",critPaths:[]},
+{source:"evaluate_stability",target:"g_window_samples",type:"call",label:"window size",critPaths:[]},
+// fault register
+{source:"fault_set",target:"refresh_safety_crc",type:"call-critical",label:"MA-1 refresh",critPaths:["CP-6"]},
+{source:"fault_clr",target:"refresh_safety_crc",type:"call-critical",label:"MA-1 refresh",critPaths:[]},
+{source:"fault_reset_all",target:"refresh_safety_crc",type:"call-critical",label:"MA-1 refresh",critPaths:[]},
+{source:"fault_shadow_ok",target:"fault_mask_get",type:"call",label:"read shadow",critPaths:[]},
+// CRC chain
+{source:"safety_crc_ok",target:"compute_safety_crc",type:"call",label:"recompute",critPaths:[]},
+{source:"refresh_safety_crc",target:"compute_safety_crc",type:"call",label:"update ref",critPaths:[]},
+// push_sample
+{source:"push_sample",target:"refresh_safety_crc",type:"call-critical",label:"MA-1 refresh",critPaths:[]},
+{source:"push_sample",target:"g_window_samples",type:"call",label:"window size",critPaths:[]},
+// reset_stability_state
+{source:"reset_stability_state",target:"refresh_safety_crc",type:"call-critical",label:"MA-1 refresh",critPaths:[]},
+// set_safe_output
+{source:"set_safe_output",target:"SAFE_OUT_PIN",type:"hw-write",label:"drive pin",critPaths:["CP-5"]},
+{source:"set_safe_output",target:"SAFE_MON_PIN_HW",type:"hw-write",label:"readback CR-4",critPaths:["CP-5"]},
+{source:"set_safe_output",target:"fault_set",type:"call-critical",label:"FAULT_OUTPUT/INTEGRITY",critPaths:[]},
+{source:"set_safe_output",target:"fault_clr",type:"call",label:"clr FAULT_OUTPUT",critPaths:[]},
+// WDT hardware
+{source:"wdt_feed",target:"RTWDOG3",type:"hw-write",label:"CMD32EN refresh",critPaths:[]},
+{source:"wdt_begin",target:"RTWDOG3",type:"hw-write",label:"arm timeout",critPaths:[]},
+// SPI chain
+{source:"asm_read_sensors",target:"asm_burst_read",type:"call",label:"burst accel/gyro",critPaths:["CP-2"]},
+{source:"asm_read_sensors",target:"asm_reg_read",type:"call",label:"STATUS_REG",critPaths:[]},
+{source:"asm_read_sensors",target:"asm_frozen_burst_reset",type:"call",label:"SPI flush",critPaths:[]},
+{source:"asm_burst_read",target:"SPI1",type:"hw-spi",label:"SPI transfer",critPaths:["CP-2"]},
+{source:"asm_reg_read",target:"SPI1",type:"hw-spi",label:"SPI transfer",critPaths:[]},
+{source:"asm_reg_write",target:"SPI1",type:"hw-spi",label:"SPI transfer",critPaths:[]},
+{source:"SPI1",target:"IMU_A",type:"hw-spi",label:"CS=10, 4 MHz",critPaths:["CP-2"]},
+{source:"SPI1",target:"IMU_B",type:"hw-spi",label:"CS=9, 4 MHz",critPaths:[]},
+// asm_init chain
+{source:"asm_init",target:"asm_sw_reset",type:"call",label:"SW reset",critPaths:[]},
+{source:"asm_init",target:"asm_reg_write",type:"call",label:"config CTRL regs",critPaths:[]},
+{source:"asm_init",target:"asm_reg_read",type:"call",label:"WHO_AM_I",critPaths:[]},
+// FSM
+{source:"asm_fsm_configure",target:"emb_write_page",type:"call",label:"upload FSM",critPaths:[]},
+{source:"emb_write_page",target:"asm_reg_write",type:"call",label:"page write",critPaths:[]},
+// self-test
+{source:"asm_self_test",target:"asm_reg_write",type:"call",label:"ST enable",critPaths:[]},
+{source:"asm_self_test",target:"asm_burst_read",type:"call",label:"ST read",critPaths:[]},
+{source:"asm_sw_reset",target:"asm_reg_write",type:"call",label:"write SW_RESET",critPaths:[]},
+// imu_recover
+{source:"imu_recover",target:"fault_reset_all",type:"call-recovery",label:"clear faults",critPaths:["CP-8"]},
+{source:"imu_recover",target:"reset_stability_state",type:"call-recovery",label:"clear state",critPaths:["CP-8"]},
+{source:"imu_recover",target:"wdt_feed",type:"call",label:"feed WDT",critPaths:[]},
+{source:"imu_recover",target:"asm_init",type:"call-recovery",label:"re-init IMU",critPaths:["CP-8"]},
+{source:"imu_recover",target:"asm_fsm_configure",type:"call-recovery",label:"re-upload FSM",critPaths:[]},
+{source:"imu_recover",target:"mahony_init",type:"call-recovery",label:"reset AHRS",critPaths:["CP-8"]},
+// params
+{source:"params_load",target:"EEPROM",type:"hw-write",label:"read NVM",critPaths:[]},
+{source:"params_save",target:"EEPROM",type:"hw-write",label:"write NVM",critPaths:[]},
+{source:"params_load",target:"params_valid",type:"call",label:"validate",critPaths:[]},
+{source:"http_handle",target:"params_valid",type:"call",label:"validate",critPaths:[]},
+// app
+{source:"app_init",target:"Ethernet_MAC",type:"hw-write",label:"ENET init",critPaths:[]},
+{source:"app_tick",target:"Ethernet_MAC",type:"hw-write",label:"lwIP tick",critPaths:[]},
+{source:"app_tick",target:"wdt_feed",type:"call",label:"feed WDT",critPaths:[]},
+{source:"app_tick",target:"http_handle",type:"call",label:"HTTP dispatch",critPaths:[]},
+{source:"http_handle",target:"parse_kv",type:"call",label:"parse POST",critPaths:[]},
+{source:"http_handle",target:"params_save",type:"call",label:"save config",critPaths:[]},
+{source:"http_handle",target:"app_publish_thresholds",type:"data-boundary",label:"update thresholds",critPaths:[]},
+// data boundary
+{source:"app_publish_thresholds",target:"safety_tick",type:"data-boundary",label:"g_safety_thresholds",critPaths:[]},
+// stability helpers
+{source:"compute_window_tilt_spread",target:"tilt_distance_deg",type:"call",label:"dist calc",critPaths:[]},
+{source:"compute_window_tilt_spread",target:"g_window_samples",type:"call",label:"window size",critPaths:[]},
+{source:"diverse_stable",target:"g_window_samples",type:"call",label:"window size",critPaths:[]},
+{source:"stack_watermark_update",target:"stack_used_bytes",type:"call",label:"measure SP",critPaths:[]},
+// march → fatal
+{source:"ram_march_test",target:"fatal",type:"call-critical",label:"on fail → halt",critPaths:["CP-9"]}
+];
+
+// ── Build caller/callee maps (before D3 mutates edge objects) ────────────────
+const CALLEE_MAP = {};
+const CALLER_MAP = {};
+EDGES.forEach(e => {
+  (CALLEE_MAP[e.source] = CALLEE_MAP[e.source] || []).push(e.target);
+  (CALLER_MAP[e.target] = CALLER_MAP[e.target] || []).push(e.source);
+});
+
+// ── Critical path definitions ─────────────────────────────────────────────────
+const CRIT_PATHS = [
+  {id:"CP-1",name:"ISR timing monitor",color:"#dd8800",
+   nodes:["timerISR","ARM_DWT","fault_set_from_isr"],
+   desc:"833 Hz ISR reads DWT cycle counter; jitter > ±5% sets FAULT_TIMING"},
+  {id:"CP-2",name:"IMU data acquisition",color:"#4a90d9",
+   nodes:["safety_tick","asm_read_sensors","asm_burst_read","SPI1","IMU_A","IMU_B"],
+   desc:"Loop → dual SPI burst read → 833 Hz sensor data"},
+  {id:"CP-3",name:"AHRS integration",color:"#30b880",
+   nodes:["safety_tick","mahony_update","mahony_to_tilt"],
+   desc:"Mahony complementary filter → roll/pitch at 833 Hz"},
+  {id:"CP-4",name:"Stability eval gate",color:"#cc2222",
+   nodes:["evaluate_stability","fault_shadow_ok","safety_crc_ok"],
+   desc:"8-gate arbiter; Guards 1–2 are shadow+CRC integrity checks"},
+  {id:"CP-5",name:"Safe output control",color:"#ff4422",
+   nodes:["evaluate_stability","set_safe_output","SAFE_OUT_PIN","SAFE_MON_PIN_HW"],
+   desc:"Stability result → drive pin → hardware readback CR-4"},
+  {id:"CP-6",name:"Fault integrity chain",color:"#d4a017",
+   nodes:["fault_set","refresh_safety_crc","compute_safety_crc"],
+   desc:"Every fault_set/clr refreshes CRC to keep MA-1 coverage current"},
+  {id:"CP-7",name:"Frozen-loop watchdog",color:"#ff6600",
+   nodes:["IntervalTimer","timerISR","SAFE_OUT_PIN"],
+   desc:"ISR directly drives output LOW if loop frozen > 26 ticks (~31 ms)"},
+  {id:"CP-8",name:"IMU recovery sequence",color:"#22aa55",
+   nodes:["imu_recover","asm_init","mahony_init","fault_reset_all","reset_stability_state"],
+   desc:"Exponential-backoff recovery: HW reset → re-init → clear state"},
+  {id:"CP-9",name:"Startup init sequence",color:"#a060e0",
+   nodes:["safety_init","ram_march_test","wdt_begin","asm_self_test","stack_base_capture"],
+   desc:"Ordered startup: RAM march → WDT arm → IMU self-test → ISR start"},
+];
+
+// Collect all CP node/edge sets for fast lookup
+const CP_NODE_SETS = {};
+const CP_EDGE_SETS = {};
+CRIT_PATHS.forEach(cp => {
+  CP_NODE_SETS[cp.id] = new Set(cp.nodes);
+  CP_EDGE_SETS[cp.id] = new Set();
+  EDGES.forEach(e => {
+    if (e.critPaths.includes(cp.id)) CP_EDGE_SETS[cp.id].add(e);
+  });
+});
+
+// ── Edge styling ──────────────────────────────────────────────────────────────
+const EDGE_STYLE = {
+  'call':            {color:'#2a4060', width:1,   dash:null},
+  'call-critical':   {color:'#882200', width:2,   dash:null},
+  'integrity-gate':  {color:'#cc0000', width:3,   dash:null},
+  'call-recovery':   {color:'#22aa55', width:2,   dash:null},
+  'isr-async':       {color:'#dd8800', width:1.5, dash:'6,3'},
+  'data-boundary':   {color:'#4a90d9', width:1.5, dash:'8,4'},
+  'hw-write':        {color:'#dd6622', width:1.5, dash:null},
+  'hw-spi':          {color:'#5a7090', width:1.5, dash:null},
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function nodeColor(d) {
+  if (d.layer === 'entry') return '#d4a017';
+  if (d.layer === 'safety-d') return '#c49010';
+  if (d.layer === 'safety-b') return '#c06010';
+  if (d.layer === 'app') return '#3a80c9';
+  return '#506070';
+}
+function nodeStroke(d) {
+  if (d.layer === 'entry') return '#f0c040';
+  if (d.layer === 'safety-d') return '#e0b030';
+  if (d.layer === 'safety-b') return '#e07020';
+  if (d.layer === 'app') return '#6aadff';
+  return '#7090a0';
+}
+function nodeR(d) {
+  if (d.shape === 'hexagon') return 22;
+  if (d.shape === 'circle') return 15;
+  if (d.shape === 'rect') return 15;
+  return 18; // diamond
+}
+
+function hexPoints(r) {
+  return d3.range(6).map(i => {
+    const a = i * Math.PI / 3;
+    return `${(r * Math.cos(a)).toFixed(1)},${(r * Math.sin(a)).toFixed(1)}`;
+  }).join(' ');
+}
+function diamondPoints(r) {
+  return `0,${-r} ${r},0 0,${r} ${-r},0`;
+}
+
+function layerY(d, H) {
+  if (d.layer === 'entry') return H * 0.06;
+  if (d.layer === 'safety-d') return H * 0.26;
+  if (d.layer === 'safety-b') return H * 0.50;
+  if (d.layer === 'app') return H * 0.72;
+  return H * 0.90;
+}
+
+function moduleX(d, W) {
+  const map = {
+    entry: 0.50,
+    safety_isr: 0.14,
+    safety_monitor: 0.30,
+    safety_stability: 0.52,
+    safety_imu: 0.70,
+    safety_ahrs: 0.86,
+    app_params: 0.38,
+    app_http: 0.62,
+    hw: 0.50,
+  };
+  return W * (map[d.module] ?? 0.50);
+}
+
+// ── False-HIGH Risk Overlay ───────────────────────────────────────────────────
+// Nodes that can contribute to SAFE_OUT_PIN=HIGH when platform NOT stable.
+// Risk levels per MIL-STD-882E FTA (see psm_fta.html for full analysis).
+const FALSE_HIGH_RISK = {
+  'asm_read_sensors':          {level:'SERIOUS', prob:'D', pfh:'~10⁻⁵/hr', mil:'I-D', desc:'Dominant: correlated sensor failure fools sw_ok AND hw_gate simultaneously (common-mode EMI/supply). Config-reg CRC-8 shadow implemented (200 ms, 4 regs); sensor data frame CRC (burst reads) still open.'},
+  'mahony_update':             {level:'SERIOUS', prob:'D', pfh:'~10⁻⁵/hr', mil:'I-D', desc:'Part of dominant common-mode path — both Mahony instances fed corrupted "stable" sensor data.'},
+  'evaluate_stability':        {level:'MEDIUM',  prob:'E', pfh:'~10⁻⁶/hr', mil:'I-E', desc:'8-gate arbiter logic error; partially guarded by hw_gate AND condition.'},
+  'app_publish_thresholds':    {level:'MEDIUM',  prob:'E', pfh:'~5×10⁻⁷/hr',mil:'I-E', desc:'spread_max_deg and anchor_max_deg written to safety thresholds but NOT covered by CRC-16.'},
+  'push_sample':               {level:'LOW',     prob:'F', pfh:'~10⁻¹⁰/hr', mil:'I-F', desc:'Tilt buffer unprotected, but hw_gate runs on independent ASM330LHB Cortex-M0+ — effectively eliminated.'},
+  'compute_window_tilt_spread':{level:'LOW',     prob:'F', pfh:'~10⁻¹⁰/hr', mil:'I-F', desc:'buf_head/count CRC-covered; hw_gate independent. Effectively eliminated.'},
+  'safety_crc_ok':             {level:'LOW',     prob:'F', pfh:'~10⁻⁸/hr',  mil:'I-F', desc:'CRC-16 CCITT-FALSE HD=4; collision P=1/65536. Shadow pair also guards fault_mask.'},
+  'fault_shadow_ok':           {level:'LOW',     prob:'F', pfh:'~10⁻¹⁰/hr', mil:'I-F', desc:'Complementary encoding XOR=0xFFFF; requires simultaneous 2-word DTCM fault. Effectively eliminated.'},
+  'SAFE_OUT_PIN':              {level:'LOW',     prob:'F', pfh:'~10⁻¹⁰/hr', mil:'I-F', desc:'CR-4: SAFE_MON_PIN_HW readback at 833 Hz → FAULT_OUTPUT on mismatch.'},
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const layerVisible  = {'entry':true,'safety-d':true,'safety-b':true,'app':true,'hw':true};
+const edgeVisible   = {'isr-async':true,'call-critical':true};
+let selectedNode = null;
+let activeCritPath = null;
+let fhRiskVisible = false;
+
+// ── D3 setup ──────────────────────────────────────────────────────────────────
+const svg = d3.select('#sv');
+const gMain = svg.append('g').attr('id','gMain');
+const gBands = gMain.append('g').attr('id','gBands');
+const gLinks = gMain.append('g').attr('id','gLinks');
+const gRisk  = gMain.append('g').attr('id','gRisk');   // risk rings — between edges and nodes
+const gNodes = gMain.append('g').attr('id','gNodes');
+
+// Zoom
+svg.call(d3.zoom().scaleExtent([0.07,6]).on('zoom', e => gMain.attr('transform', e.transform)));
+
+// Defs: arrowheads
+const defs = svg.append('defs');
+Object.entries(EDGE_STYLE).forEach(([type, s]) => {
+  defs.append('marker')
+    .attr('id', `arrow-${type}`)
+    .attr('viewBox','0 -4 10 8')
+    .attr('refX', 8).attr('refY', 0)
+    .attr('markerWidth', type==='integrity-gate'?7:5)
+    .attr('markerHeight', type==='integrity-gate'?7:5)
+    .attr('orient','auto')
+    .append('path')
+    .attr('d','M0,-4L10,0L0,4')
+    .attr('fill', s.color);
+});
+
+// Glow filter
+const filt = defs.append('filter').attr('id','glow').attr('x','-40%').attr('y','-40%').attr('width','180%').attr('height','180%');
+filt.append('feGaussianBlur').attr('stdDeviation','5').attr('result','blur');
+const feMerge = filt.append('feMerge');
+feMerge.append('feMergeNode').attr('in','blur');
+feMerge.append('feMergeNode').attr('in','SourceGraphic');
+
+function getSize() {
+  const el = document.getElementById('gfx');
+  return {W: el.clientWidth, H: el.clientHeight};
+}
+
+// ── Initialize simulation ─────────────────────────────────────────────────────
+const nodes = NODES.map(d => ({...d}));
+const nodeById = {};
+nodes.forEach(n => nodeById[n.id] = n);
+
+// Hardware x positions
+const hwNodes = nodes.filter(n=>n.layer==='hw');
+function pinHardware() {
+  const {W, H} = getSize();
+  const step = W / (hwNodes.length + 1);
+  hwNodes.forEach((n,i) => { n.fx = step*(i+1); n.fy = H*0.90; });
+  // Pin entry nodes
+  const setupN = nodeById['setup'];
+  const loopN  = nodeById['loop'];
+  if (setupN) { setupN.fx = W*0.45; setupN.fy = H*0.06; }
+  if (loopN)  { loopN.fx  = W*0.55; loopN.fy  = H*0.06; }
+}
+pinHardware();
+
+// Initial scatter
+nodes.forEach(n => {
+  if (n.fx != null) return;
+  const {W, H} = getSize();
+  n.x = moduleX(n, W) + (Math.random()-0.5)*80;
+  n.y = layerY(n, H)  + (Math.random()-0.5)*50;
+});
+
+const sim = d3.forceSimulation(nodes)
+  .force('link', d3.forceLink(EDGES).id(d=>d.id).distance(d => {
+    if (d.type==='hw-spi'||d.type==='hw-write') return 80;
+    if (d.type==='integrity-gate') return 100;
+    return 88;
+  }).strength(0.35))
+  .force('charge', d3.forceManyBody().strength(-280))
+  .force('collide', d3.forceCollide().radius(d => nodeR(d)+14).strength(0.8))
+  .force('x', d3.forceX(d => { const {W}=getSize(); return moduleX(d,W); }).strength(0.08))
+  .force('y', d3.forceY(d => { const {H}=getSize(); return layerY(d,H); }).strength(0.30))
+  .alphaDecay(0.025).velocityDecay(0.4);
+
+// ── Layer bands ───────────────────────────────────────────────────────────────
+function drawBands() {
+  const {W,H} = getSize();
+  gBands.selectAll('*').remove();
+  const bands = [
+    {label:'Entry Point',       y1:H*0.00, y2:H*0.13, color:'rgba(180,140,0,0.04)'},
+    {label:'ASIL D Safety Layer',y1:H*0.13, y2:H*0.38, color:'rgba(180,60,0,0.06)'},
+    {label:'ASIL B Safety Layer',y1:H*0.38, y2:H*0.62, color:'rgba(200,100,0,0.04)'},
+    {label:'Application QM',    y1:H*0.62, y2:H*0.80, color:'rgba(40,90,180,0.04)'},
+    {label:'Hardware',          y1:H*0.80, y2:H*1.00, color:'rgba(80,100,120,0.05)'},
+  ];
+  bands.forEach(b => {
+    gBands.append('rect').attr('x',0).attr('y',b.y1).attr('width',W).attr('height',b.y2-b.y1)
+      .attr('fill',b.color).attr('stroke','none');
+    gBands.append('rect').attr('x',0).attr('y',b.y1).attr('width',W).attr('height',1)
+      .attr('fill','rgba(255,255,255,0.04)');
+    gBands.append('text').attr('x',8).attr('y',b.y1+14).attr('fill','rgba(255,255,255,0.10)')
+      .attr('font-size','10px').attr('font-weight','700').attr('letter-spacing','0.05em')
+      .text(b.label.toUpperCase());
+  });
+}
+drawBands();
+
+// ── Render links ──────────────────────────────────────────────────────────────
+function linkPath(d) {
+  const sx = d.source.x, sy = d.source.y, tx = d.target.x, ty = d.target.y;
+  const dx = tx-sx, dy = ty-sy;
+  const dist = Math.sqrt(dx*dx+dy*dy)||1;
+  const sr = nodeR(d.source)+5, tr = nodeR(d.target)+8;
+  const x1 = sx+dx/dist*sr, y1 = sy+dy/dist*sr;
+  const x2 = tx-dx/dist*tr, y2 = ty-dy/dist*tr;
+  const mx = (x1+x2)/2, my = (y1+y2)/2;
+  const offset = Math.min(dist*0.14, 35);
+  const nx = -dy/dist*offset, ny = dx/dist*offset;
+  return `M${x1},${y1} Q${mx+nx},${my+ny} ${x2},${y2}`;
+}
+
+const linkSel = gLinks.selectAll('.edge')
+  .data(EDGES).enter().append('path')
+  .attr('class','edge')
+  .attr('stroke', d => (EDGE_STYLE[d.type]||EDGE_STYLE['call']).color)
+  .attr('stroke-width', d => (EDGE_STYLE[d.type]||EDGE_STYLE['call']).width)
+  .attr('stroke-dasharray', d => (EDGE_STYLE[d.type]||EDGE_STYLE['call']).dash||null)
+  .attr('marker-end', d => `url(#arrow-${d.type})`);
+
+// ── Render nodes ──────────────────────────────────────────────────────────────
+const nodeSel = gNodes.selectAll('.node')
+  .data(nodes).enter().append('g')
+  .attr('class','node')
+  .call(d3.drag().on('start', dragStart).on('drag', dragged).on('end', dragEnd))
+  .on('click', (event, d) => { event.stopPropagation(); selectNode(d); })
+  .on('mouseover', (event, d) => showTip(event, d))
+  .on('mousemove', (event, d) => moveTip(event))
+  .on('mouseout', () => hideTip());
+
+// Draw shape per node
+nodeSel.each(function(d) {
+  const g = d3.select(this);
+  const c = nodeColor(d), s = nodeStroke(d);
+  if (d.shape === 'hexagon') {
+    g.append('polygon').attr('points', hexPoints(21)).attr('fill',c).attr('stroke',s).attr('stroke-width',1.8);
+  } else if (d.shape === 'circle') {
+    g.append('circle').attr('r',15).attr('fill',c).attr('stroke',s).attr('stroke-width',1.5);
+  } else if (d.shape === 'rect') {
+    g.append('rect').attr('x',-46).attr('y',-12).attr('width',92).attr('height',24).attr('rx',5)
+     .attr('fill',c).attr('stroke',s).attr('stroke-width',1.5);
+  } else { // diamond
+    g.append('polygon').attr('points', diamondPoints(18)).attr('fill',c).attr('stroke',s).attr('stroke-width',1.5);
+  }
+  // Label
+  const label = d.label.length > 16 ? d.label.substring(0,15)+'…' : d.label;
+  g.append('text').attr('class','lbl').attr('y', d.shape==='rect'?0.5:0).text(label);
+  // ASIL badge
+  if (d.layer !== 'hw') {
+    const by = d.shape==='hexagon'?28 : d.shape==='circle'?22 : 18;
+    g.append('text').attr('class','asil-badge').attr('y',by)
+     .attr('fill', d.layer==='entry'||d.layer==='safety-d' ? '#d4a017' : d.layer==='safety-b' ? '#e07020' : '#5a9adf')
+     .text(d.asil);
+  }
+});
+
+// SVG background click to clear
+svg.on('click', clearSelection);
+
+// ── Simulation tick ───────────────────────────────────────────────────────────
+sim.on('tick', () => {
+  linkSel.attr('d', linkPath);
+  nodeSel.attr('transform', d => `translate(${d.x},${d.y})`);
+  gRisk.selectAll('circle').attr('cx', function(){ return (nodeById[this.getAttribute('data-node')]||{}).x||0; })
+                           .attr('cy', function(){ return (nodeById[this.getAttribute('data-node')]||{}).y||0; });
+});
+
+// ── Drag ──────────────────────────────────────────────────────────────────────
+function dragStart(event, d) {
+  if (!event.active) sim.alphaTarget(0.3).restart();
+  d.fx = d.x; d.fy = d.y;
+}
+function dragged(event, d) { d.fx = event.x; d.fy = event.y; }
+function dragEnd(event, d) {
+  if (!event.active) sim.alphaTarget(0);
+  // Don't release pins for hw/entry
+  if (d.layer !== 'hw' && d.layer !== 'entry') { d.fx = null; d.fy = null; }
+}
+
+// ── Tooltip ───────────────────────────────────────────────────────────────────
+const tip = document.getElementById('tip');
+function showTip(event, d) {
+  const fhr = FALSE_HIGH_RISK[d.id];
+  const riskBit = fhr ? ` · <span style="color:${fhr.level==='SERIOUS'?'#ffaa66':fhr.level==='MEDIUM'?'#ddcc44':'#66cc88'}">⚠ ${fhr.level}</span>` : '';
+  tip.innerHTML = `<strong>${d.label}</strong><br><span>${d.asil} · ${d.file}${riskBit}</span>`;
+  tip.style.display = 'block';
+  moveTip(event);
+}
+function moveTip(event) {
+  const r = document.getElementById('gfx').getBoundingClientRect();
+  let x = event.clientX - r.left + 14, y = event.clientY - r.top - 10;
+  if (x + 230 > r.width) x -= 240;
+  tip.style.left = x+'px'; tip.style.top = y+'px';
+}
+function hideTip() { tip.style.display = 'none'; }
+
+// ── Inspector ─────────────────────────────────────────────────────────────────
+function selectNode(d) {
+  selectedNode = d;
+  activeCritPath = null;
+
+  nodeSel.classed('dimmed', n => n.id !== d.id && !EDGES.some(e =>
+    (e.source.id||e.source)===d.id&&(e.target.id||e.target)===n.id ||
+    (e.source.id||e.source)===n.id&&(e.target.id||e.target)===d.id
+  ));
+  linkSel.classed('dimmed', e => {
+    const sid = e.source.id||e.source, tid = e.target.id||e.target;
+    return sid!==d.id && tid!==d.id;
+  });
+
+  document.getElementById('nd-hint').style.display = 'none';
+  document.getElementById('nd-detail').style.display = 'block';
+
+  // ASIL color
+  const asilColor = d.layer==='hw' ? '#7090a0' :
+    (d.layer==='entry'||d.layer==='safety-d') ? '#d4a017' :
+    d.layer==='safety-b' ? '#e07020' : '#4a90d9';
+
+  document.getElementById('nd-name').innerHTML =
+    `<span style="color:${asilColor}">${d.label}</span>
+     <span style="font-size:9px;color:${asilColor};border:1px solid ${asilColor};border-radius:6px;padding:1px 6px;margin-left:6px;">${d.asil}</span>`;
+  document.getElementById('nd-sig').textContent = d.sig;
+  document.getElementById('nd-role').textContent = d.role;
+
+  // Props
+  let html = '';
+  if (d.faultsSets.length) {
+    html += `<div class="prop-row"><span class="prop-key">Sets</span><span class="prop-val">${d.faultsSets.map(f=>`<span class="chip chip-red">${f}</span>`).join('')}</span></div>`;
+  }
+  if (d.faultsClears.length) {
+    html += `<div class="prop-row"><span class="prop-key">Clears</span><span class="prop-val">${d.faultsClears.map(f=>`<span class="chip chip-grn">${f}</span>`).join('')}</span></div>`;
+  }
+  if (d.mechanisms.length) {
+    html += `<div class="prop-row"><span class="prop-key">Mechanisms</span><span class="prop-val">${d.mechanisms.map(m=>`<span class="chip chip-amber">${m}</span>`).join('')}</span></div>`;
+  }
+  if (d.critPaths.length) {
+    html += `<div class="prop-row"><span class="prop-key">Crit Paths</span><span class="prop-val">${d.critPaths.map(cp=>{
+      const cpd = CRIT_PATHS.find(c=>c.id===cp);
+      return `<span class="chip chip-blue" style="cursor:pointer" onclick="clickCritPath('${cp}')">${cp}</span>`;
+    }).join('')}</span></div>`;
+  }
+  const fhr = FALSE_HIGH_RISK[d.id];
+  if (fhr) {
+    const rc = fhr.level==='SERIOUS'?'#3a1800;color:#ffaa66':fhr.level==='MEDIUM'?'#2a2400;color:#ddcc44':'#0a2010;color:#66cc88';
+    html += `<div style="margin-top:8px;padding:8px;background:#0d1420;border:1px solid #2a3040;border-left:3px solid ${fhr.level==='SERIOUS'?'#dd6622':fhr.level==='MEDIUM'?'#aaaa22':'#336633'};border-radius:4px;font-size:10px;">`;
+    html += `<div style="font-weight:700;margin-bottom:4px;color:#c0a060">⚠ False-HIGH Risk</div>`;
+    html += `<div style="margin-bottom:3px"><span style="background:${rc};padding:1px 6px;border-radius:3px;font-size:9px;font-weight:700">${fhr.level} (${fhr.mil})</span></div>`;
+    html += `<div style="color:#8090a0;margin-bottom:2px">Prob: <b style="color:#a0b0c0">${fhr.prob}</b> &nbsp; PFH: <b style="color:#a0b0c0">${fhr.pfh}</b></div>`;
+    html += `<div style="color:#7080a0;line-height:1.5">${fhr.desc}</div>`;
+    html += `</div>`;
+  }
+  document.getElementById('nd-props').innerHTML = html;
+
+  // Callers / callees
+  const callers = (CALLER_MAP[d.id]||[]);
+  const callees = (CALLEE_MAP[d.id]||[]);
+  document.getElementById('nd-callers').innerHTML = callers.length ?
+    callers.map(id => `<div style="cursor:pointer;color:#6a9dc0" onclick="selectNodeById('${id}')">${id}</div>`).join('') :
+    '<div style="color:#2a4060">—</div>';
+  document.getElementById('nd-callees').innerHTML = callees.length ?
+    callees.map(id => `<div style="cursor:pointer;color:#6a9dc0" onclick="selectNodeById('${id}')">${id}</div>`).join('') :
+    '<div style="color:#2a4060">—</div>';
+}
+
+function selectNodeById(id) {
+  const n = nodeById[id];
+  if (n) selectNode(n);
+}
+
+function clearSelection() {
+  selectedNode = null;
+  activeCritPath = null;
+  nodeSel.classed('dimmed', false).classed('cp-active', false);
+  linkSel.classed('dimmed', false).classed('cp-active', false);
+  document.getElementById('nd-hint').style.display = 'block';
+  document.getElementById('nd-detail').style.display = 'none';
+  document.querySelectorAll('.cp-row').forEach(r=>r.classList.remove('active'));
+}
+
+// ── Critical path highlight ───────────────────────────────────────────────────
+function clickCritPath(cpId) { highlightCritPath(cpId); }
+
+function highlightCritPath(cpId) {
+  if (activeCritPath === cpId) { clearSelection(); return; }
+  activeCritPath = cpId;
+  selectedNode = null;
+  document.getElementById('nd-hint').style.display = 'block';
+  document.getElementById('nd-detail').style.display = 'none';
+  const cpNodeSet = CP_NODE_SETS[cpId];
+  const cpEdgeSet = CP_EDGE_SETS[cpId];
+  nodeSel.classed('dimmed', d => !cpNodeSet.has(d.id))
+         .classed('cp-active', d => cpNodeSet.has(d.id));
+  linkSel.classed('dimmed', e => !cpEdgeSet.has(e))
+         .classed('cp-active', e => cpEdgeSet.has(e));
+  document.querySelectorAll('.cp-row').forEach(r => r.classList.toggle('active', r.dataset.cp===cpId));
+}
+
+// ── False-HIGH risk ring toggle ───────────────────────────────────────────────
+function buildRiskRings() {
+  gRisk.selectAll('*').remove();
+  const RING_EXTRA = {SERIOUS:10, MEDIUM:8, LOW:5};
+  Object.entries(FALSE_HIGH_RISK).forEach(([nodeId, risk]) => {
+    const n = nodeById[nodeId];
+    if (!n) return;
+    const r = nodeR(n) + (RING_EXTRA[risk.level]||6);
+    gRisk.append('circle')
+      .attr('r', r)
+      .attr('class', `rring-${risk.level.toLowerCase()}`)
+      .attr('data-node', nodeId);
+  });
+}
+function toggleFhRisk(btn) {
+  fhRiskVisible = !fhRiskVisible;
+  btn.classList.toggle('fh-on', fhRiskVisible);
+  const el = document.getElementById('gRisk');
+  el.classList.toggle('fh-on', fhRiskVisible);
+  if (fhRiskVisible) buildRiskRings();
+}
+
+// ── Filters ───────────────────────────────────────────────────────────────────
+function toggleFilter(layer, btn) {
+  layerVisible[layer] = !layerVisible[layer];
+  btn.classList.toggle('on', layerVisible[layer]);
+  applyFilters();
+}
+function toggleEdgeFilter(type, btn) {
+  edgeVisible[type] = !edgeVisible[type];
+  btn.classList.toggle('on', edgeVisible[type]);
+  applyFilters();
+}
+function applyFilters() {
+  nodeSel.style('display', d => layerVisible[d.layer] ? null : 'none');
+  linkSel.style('display', e => {
+    const sid = e.source.id||e.source, tid = e.target.id||e.target;
+    const sn = nodeById[sid], tn = nodeById[tid];
+    if (!sn||!tn) return 'none';
+    if (!layerVisible[sn.layer]||!layerVisible[tn.layer]) return 'none';
+    if (e.type==='isr-async' && !edgeVisible['isr-async']) return 'none';
+    if (e.type==='call-critical' && !edgeVisible['call-critical']) return 'none';
+    return null;
+  });
+  sim.alpha(0.08).restart();
+}
+
+// ── Legend ────────────────────────────────────────────────────────────────────
+const legEl = document.getElementById('leg');
+CRIT_PATHS.forEach(cp => {
+  const row = document.createElement('div');
+  row.className = 'cp-row';
+  row.dataset.cp = cp.id;
+  row.title = cp.desc;
+  row.innerHTML = `<div class="cp-dot" style="background:${cp.color}"></div>
+    <span class="cp-id">${cp.id}</span>
+    <span class="cp-name">${cp.name}</span>`;
+  row.onclick = () => highlightCritPath(cp.id);
+  legEl.appendChild(row);
+});
+
+// ── Resize handler ────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  pinHardware();
+  drawBands();
+  sim.alpha(0.1).restart();
+});
+</script>
+</body>
+</html>

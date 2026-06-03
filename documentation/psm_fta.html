@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PSM — False-HIGH Fault Tree · MIL-STD-882E</title>
+<style>
+:root {
+  --bg:#0c0e14; --surface:#141820; --surface2:#1e2430; --border:#2a3548;
+  --text:#c8d0e0; --dim:#607080; --gold:#d4a017; --teal:#20a0a0;
+  --red:#cc2222; --amber:#dd8800; --green:#22aa55; --blue:#4a90d9;
+  --orange:#dd6622; --serious:#cc4422; --medium:#aaaa22;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;line-height:1.55}
+a{color:var(--blue);text-decoration:none}
+
+/* HEADER */
+header{
+  background:linear-gradient(135deg,#0a0d16 0%,#141c2e 100%);
+  border-bottom:1px solid var(--border);
+  padding:18px 32px 14px;
+  display:flex; align-items:flex-start; justify-content:space-between;
+}
+.hdr-left h1{font-size:20px;font-weight:700;color:#e8eaf0;letter-spacing:.3px}
+.hdr-left p{margin-top:3px;color:var(--dim);font-size:12px}
+.badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.badge{padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:.5px}
+.badge-gold{background:#3a2800;color:var(--gold);border:1px solid var(--gold)}
+.badge-teal{background:#003030;color:var(--teal);border:1px solid var(--teal)}
+.badge-red{background:#2a0808;color:#ff6666;border:1px solid #882222}
+.badge-amber{background:#2a1800;color:var(--amber);border:1px solid #664400}
+.hdr-right{text-align:right;color:var(--dim);font-size:11px;line-height:1.8}
+
+/* MAIN LAYOUT */
+main{max-width:1300px;margin:0 auto;padding:28px 24px 60px}
+
+/* SECTION HEADINGS */
+.section-title{
+  font-size:15px;font-weight:700;color:#e0e4f0;letter-spacing:.3px;
+  border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:18px;
+  display:flex;align-items:center;gap:10px
+}
+.section-title .num{
+  background:var(--surface2);border:1px solid var(--border);
+  color:var(--dim);font-size:11px;padding:2px 7px;border-radius:3px
+}
+
+section{margin-bottom:44px}
+
+/* CALLOUT */
+.callout{
+  background:#1a1400;border:1px solid #554400;border-left:4px solid var(--amber);
+  border-radius:6px;padding:16px 20px;margin-bottom:32px;
+}
+.callout h3{color:var(--amber);font-size:13px;margin-bottom:8px;letter-spacing:.3px}
+.callout p{color:#b0a070;font-size:12px;line-height:1.7;margin-bottom:6px}
+.callout p:last-child{margin-bottom:0}
+.callout strong{color:#d0c090}
+
+.callout-dom{
+  background:#1a0800;border:1px solid #553300;border-left:4px solid var(--orange);
+  border-radius:6px;padding:14px 20px;margin-top:12px;
+}
+.callout-dom h4{color:var(--orange);font-size:12px;margin-bottom:6px}
+.callout-dom p{color:#b08060;font-size:12px}
+
+/* RISK MATRIX */
+.matrix-wrap{overflow-x:auto;margin-bottom:8px}
+table.risk-matrix{border-collapse:collapse;width:100%;max-width:780px;font-size:12px}
+table.risk-matrix th,table.risk-matrix td{
+  border:1px solid var(--border);padding:7px 10px;text-align:center;
+  vertical-align:middle;
+}
+table.risk-matrix thead th{background:var(--surface2);color:#90a0c0;font-weight:600}
+table.risk-matrix .prob-label{background:var(--surface);color:var(--dim);text-align:left;font-size:11px;white-space:nowrap}
+.risk-HIGH{background:#3a0808;color:#ff8888;font-weight:700}
+.risk-SERIOUS{background:#3a1800;color:#ffaa66;font-weight:700}
+.risk-MEDIUM{background:#2a2400;color:#ddcc44;font-weight:700}
+.risk-LOW{background:#0a2010;color:#66cc88;font-weight:600}
+.risk-ELIM{background:#101420;color:#607080;font-style:italic}
+.matrix-marker{font-size:11px;display:block;margin-top:2px;color:inherit;opacity:.75}
+
+/* FAULT TREE */
+#fta-container{overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px}
+#fta-svg{display:block;width:100%;max-width:1260px;margin:0 auto}
+
+.fta-legend{display:flex;gap:20px;flex-wrap:wrap;margin:14px 0 8px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:6px}
+.fta-legend-item{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--dim)}
+.fta-swatch{width:14px;height:14px;border-radius:2px;flex-shrink:0}
+.fta-swatch-circle{width:14px;height:14px;border-radius:50%;flex-shrink:0}
+
+/* RISK TABLE */
+table.rtbl{border-collapse:collapse;width:100%;font-size:12px}
+table.rtbl th{background:var(--surface2);color:#90a0c0;font-weight:600;padding:8px 10px;border:1px solid var(--border);text-align:left;white-space:nowrap}
+table.rtbl td{border:1px solid var(--border);padding:7px 10px;vertical-align:top}
+table.rtbl tr:hover td{background:#151c28}
+.risk-pill{display:inline-block;padding:2px 8px;border-radius:3px;font-weight:700;font-size:11px}
+.rp-serious{background:#3a1800;color:#ffaa66;border:1px solid #884400}
+.rp-medium{background:#2a2400;color:#ddcc44;border:1px solid #665500}
+.rp-low{background:#0a2010;color:#66cc88;border:1px solid #224422}
+.rp-elim{background:#101420;color:#607080;border:1px solid #303a4a}
+.fn-name{font-family:monospace;color:#a0d0f0;font-size:11.5px}
+.mod-tag{display:inline-block;padding:1px 6px;background:#1a2030;border:1px solid #303a50;border-radius:3px;font-size:10.5px;color:#7090b0;font-family:monospace}
+.gap-tag{color:#cc6644;font-size:11px}
+.mit-tag{color:#44aa66;font-size:11px}
+.rank-num{font-size:16px;font-weight:700;color:var(--dim)}
+.rank-1{color:var(--orange)}
+.rank-2,.rank-3{color:var(--medium)}
+
+/* DOMINANT GLOW animation */
+@keyframes domGlow{
+  0%,100%{filter:drop-shadow(0 0 3px rgba(221,102,34,.5))}
+  50%{filter:drop-shadow(0 0 10px rgba(221,102,34,.9)) drop-shadow(0 0 18px rgba(221,102,34,.4))}
+}
+.dom-glow{animation:domGlow 2.2s ease-in-out infinite}
+
+/* METHODOLOGY */
+.meth-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.meth-card{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:14px 16px}
+.meth-card h4{color:#90b0d0;font-size:12px;font-weight:700;margin-bottom:7px}
+.meth-card ul{padding-left:14px;color:var(--dim);font-size:11.5px}
+.meth-card ul li{margin-bottom:4px}
+
+footer{text-align:center;padding:20px;color:var(--dim);font-size:11px;border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hdr-left">
+    <h1>PSM — False-HIGH Fault Tree Analysis</h1>
+    <p>Platform Stability Monitor · Teensy 4.1 + dual ASM330LHB IMUs</p>
+    <div class="badges">
+      <span class="badge badge-gold">ASIL D</span>
+      <span class="badge badge-teal">SIL 3</span>
+      <span class="badge badge-red">MIL-STD-882E</span>
+      <span class="badge badge-amber">ISO 26262</span>
+    </div>
+  </div>
+  <div class="hdr-right">
+    Failure Mode: FALSE HIGH<br>
+    SAFE_OUT_PIN asserted HIGH<br>
+    when platform is NOT stable<br>
+    2026-05-28
+  </div>
+</header>
+
+<main>
+
+<!-- ── CALLOUT ───────────────────────────────────────────────────────────── -->
+<div class="callout">
+  <h3>⚡ Critical Finding — Hardware FSM AND Gate Eliminates Independent Paths</h3>
+  <p>
+    The final stability decision in <strong>safety_isr.cpp</strong> is a logical AND:
+    <strong>sw_ok</strong> (evaluate_stability, running on Teensy DTCM RAM)
+    <em>AND</em> <strong>hw_gate</strong> (asm_fsm_read_stable on ASM330LHB embedded Cortex-M0+,
+    independent silicon, independent power domain, independent RAM).
+    SAFE_OUT_PIN goes HIGH only when <em>both</em> channels independently confirm stable.
+    This eliminates all single-origin RAM corruption paths — a corrupted tilt buffer
+    cannot produce FALSE HIGH because the hardware FSM provides an independent veto.
+  </p>
+  <p>
+    <strong>FSM_STABLE_NEED = 3:</strong> the hardware FSM counter must reach 3 consecutive
+    stable evaluations (3 × 200 ms = 600 ms temporal hysteresis) before hw_gate asserts.
+  </p>
+  <div class="callout-dom">
+    <h4>▲ DOMINANT RESIDUAL RISK — Correlated (Common-Mode) Sensor Failure</h4>
+    <p>
+      Both IMU SPI channels returning "stable" data simultaneously under common-mode EMI,
+      supply voltage droop, or SPI bus corruption. This path fools <em>both</em> sw_ok
+      (software Mahony AHRS) and hw_gate (on-chip FSM), because both consume the same
+      physical sensor output. <strong>SPI config-register CRC-8 shadow implemented</strong>
+      (poly=0x07, init=0xFF; covers CTRL1_XL / CTRL2_G / CTRL3_C / CTRL4_C; verified
+      every 200 ms — 3 consecutive failures → FAULT_IMU_A/B_COMM). However, per-burst
+      <em>sensor data frame CRC</em> (12-byte OUTX_L_G reads at 833 Hz) is not yet
+      implemented — this remains a residual gap on the dominant path.
+      Estimated PFH ≈ 10⁻⁵/hr → Serious (I-D).
+    </p>
+  </div>
+</div>
+
+<!-- ── SECTION 1: RISK MATRIX ────────────────────────────────────────────── -->
+<section>
+  <div class="section-title"><span class="num">1</span> MIL-STD-882E Risk Assessment Matrix (Table III)</div>
+  <div class="matrix-wrap">
+  <table class="risk-matrix">
+    <thead>
+      <tr>
+        <th style="text-align:left;min-width:200px">Probability Level</th>
+        <th>Severity I<br><span style="font-weight:400;color:#90a0c0">Catastrophic</span></th>
+        <th>Severity II<br><span style="font-weight:400;color:#90a0c0">Critical</span></th>
+        <th>Severity III<br><span style="font-weight:400;color:#90a0c0">Marginal</span></th>
+        <th>Severity IV<br><span style="font-weight:400;color:#90a0c0">Negligible</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="prob-label"><strong>A — Frequent</strong><br>P &gt; 10⁻¹/hr</td>
+        <td class="risk-HIGH">HIGH</td>
+        <td class="risk-HIGH">HIGH</td>
+        <td class="risk-SERIOUS">SERIOUS</td>
+        <td class="risk-MEDIUM">MEDIUM</td>
+      </tr>
+      <tr>
+        <td class="prob-label"><strong>B — Probable</strong><br>10⁻² ≤ P &lt; 10⁻¹/hr</td>
+        <td class="risk-HIGH">HIGH</td>
+        <td class="risk-HIGH">HIGH</td>
+        <td class="risk-SERIOUS">SERIOUS</td>
+        <td class="risk-MEDIUM">MEDIUM</td>
+      </tr>
+      <tr>
+        <td class="prob-label"><strong>C — Occasional</strong><br>10⁻³ ≤ P &lt; 10⁻²/hr</td>
+        <td class="risk-HIGH">HIGH</td>
+        <td class="risk-SERIOUS">SERIOUS</td>
+        <td class="risk-MEDIUM">MEDIUM</td>
+        <td class="risk-LOW">LOW</td>
+      </tr>
+      <tr>
+        <td class="prob-label"><strong>D — Remote</strong><br>10⁻⁶ ≤ P &lt; 10⁻³/hr
+          <span class="matrix-marker">← Correlated sensor failure</span>
+        </td>
+        <td class="risk-SERIOUS" style="border:2px solid var(--orange)">SERIOUS
+          <span class="matrix-marker">⬅ DOM. PATH</span>
+        </td>
+        <td class="risk-MEDIUM">MEDIUM</td>
+        <td class="risk-MEDIUM">MEDIUM</td>
+        <td class="risk-LOW">LOW</td>
+      </tr>
+      <tr>
+        <td class="prob-label"><strong>E — Improbable</strong><br>10⁻⁸ ≤ P &lt; 10⁻⁶/hr
+          <span class="matrix-marker">← evaluate_stability, threshold gap</span>
+        </td>
+        <td class="risk-MEDIUM" style="border:2px solid var(--medium)">MEDIUM
+          <span class="matrix-marker">⬅ Logic bug</span>
+        </td>
+        <td class="risk-MEDIUM">MEDIUM</td>
+        <td class="risk-LOW">LOW</td>
+        <td class="risk-LOW">LOW</td>
+      </tr>
+      <tr>
+        <td class="prob-label"><strong>F — Eliminated</strong><br>P ≈ 0 (by design)
+          <span class="matrix-marker">← RAM corrupt, HW stuck, CRC, shadow</span>
+        </td>
+        <td class="risk-ELIM">ELIMINATED</td>
+        <td class="risk-ELIM">ELIMINATED</td>
+        <td class="risk-ELIM">ELIMINATED</td>
+        <td class="risk-ELIM">ELIMINATED</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <p style="color:var(--dim);font-size:11px;margin-top:8px">
+    All failure modes are classified Severity I (Catastrophic) — unintended HIGH output can trigger mechanical action on an unstable platform.
+    Events plotted assume the PSM hardware in its operational environment (indoor/industrial, managed EMI).
+  </p>
+</section>
+
+<!-- ── SECTION 2: FAULT TREE ─────────────────────────────────────────────── -->
+<section>
+  <div class="section-title"><span class="num">2</span> Fault Tree Analysis — Top Event: FALSE HIGH</div>
+
+  <div class="fta-legend">
+    <div class="fta-legend-item"><div class="fta-swatch" style="background:#3a0808;border:1px solid #882222"></div> Top Event</div>
+    <div class="fta-legend-item"><div class="fta-swatch" style="background:#1a2432;border:1px solid #4a6880"></div> Intermediate Event</div>
+    <div class="fta-legend-item"><div class="fta-swatch" style="background:#3a1800;border:1px solid #dd6622;border-radius:50%"></div> Dominant Basic Event</div>
+    <div class="fta-legend-item"><div class="fta-swatch" style="background:#2a1a00;border:1px solid #cc4422"></div> Serious Basic Event</div>
+    <div class="fta-legend-item"><div class="fta-swatch" style="background:#1e2400;border:1px solid #888822"></div> Medium Basic Event</div>
+    <div class="fta-legend-item"><div class="fta-swatch" style="background:#0a1a10;border:1px solid #336633"></div> Low / Eliminated</div>
+    <div class="fta-legend-item"><div class="fta-swatch-circle" style="background:#1a3a1a;border:1px solid #44aa44"></div> OR Gate</div>
+    <div class="fta-legend-item"><div class="fta-swatch-circle" style="background:#1a2a3a;border:1px solid #4477dd"></div> AND Gate</div>
+  </div>
+
+  <div id="fta-container">
+    <svg id="fta-svg" viewBox="0 0 1260 730" xmlns="http://www.w3.org/2000/svg"></svg>
+  </div>
+  <p style="color:var(--dim);font-size:11px;margin-top:8px">
+    AND gate (safety_isr.cpp lines 506–554): <code style="color:#a0c8e0">g_platform_stable = !s_forced_unsafe_isr &amp;&amp; (s_stab_fsm == SFST_STABLE)</code>
+    where <code style="color:#a0c8e0">s_stab_fsm = (sw_ok &amp;&amp; hw_gate) ? SFST_STABLE : SFST_UNSTABLE</code>.
+    The hw_gate path runs on ASM330LHB embedded Cortex-M0+ — independent of Teensy DTCM.
+  </p>
+</section>
+
+<!-- ── SECTION 3: FUNCTION RISK TABLE ────────────────────────────────────── -->
+<section>
+  <div class="section-title"><span class="num">3</span> Function Risk Assessment — False-HIGH Failure Mode</div>
+  <div style="overflow-x:auto">
+  <table class="rtbl">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Function(s)</th>
+        <th>Module</th>
+        <th>Root Cause Category</th>
+        <th>Prob</th>
+        <th>PFH Est.</th>
+        <th>Risk</th>
+        <th>Active Mitigations</th>
+        <th>Residual Gap</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="rank-num rank-1">1</span></td>
+        <td>
+          <span class="fn-name">asm_read_sensors()</span><br>
+          <span class="fn-name">mahony_update()</span><br>
+          <small style="color:var(--dim)">(correlated common-mode)</small>
+        </td>
+        <td><span class="mod-tag">safety_imu</span><br><span class="mod-tag">safety_ahrs</span></td>
+        <td>
+          <strong style="color:#dd8855">Hardware fault (common-mode)</strong><br>
+          Both IMU SPI channels return "stable" data simultaneously under EMI, supply fault, or bus corruption.
+          Fools both software AHRS <em>and</em> on-chip hardware FSM — bypasses AND gate.
+        </td>
+        <td><strong style="color:#ffaa66">D<br>Remote</strong></td>
+        <td><strong style="color:#ffaa66">~10⁻⁵/hr</strong></td>
+        <td><span class="risk-pill rp-serious">SERIOUS (I-D)</span></td>
+        <td class="mit-tag">
+          · Dual diverse IMU channels (A + B)<br>
+          · 3-sample FSM hold (600 ms hysteresis)<br>
+          · Software Mahony filter independent algorithm<br>
+          · IMU-B degraded-mode flag
+        </td>
+        <td class="gap-tag">
+          ✓ Config-reg CRC-8 shadow (200 ms, 4 regs) — implemented<br>
+          ⚠ Sensor data frame CRC (burst reads) — open<br>
+          ⚠ Both channels share physical sensor — common-mode exposure<br>
+          ⚠ Dominant residual path
+        </td>
+      </tr>
+      <tr>
+        <td><span class="rank-num rank-2">2</span></td>
+        <td><span class="fn-name">evaluate_stability()</span></td>
+        <td><span class="mod-tag">safety_stability</span></td>
+        <td>
+          <strong style="color:#aaaa44">Software logic bug</strong><br>
+          Logic error in 8-gate arbiter (shadow → CRC → faults → hold → fill → gyro spikes → accel spikes → spread).
+          Returns true when platform not stable.
+          Partially protected by independent hw_gate AND condition.
+        </td>
+        <td><strong style="color:#ddcc44">E<br>Improbable</strong></td>
+        <td><strong style="color:#ddcc44">~10⁻⁶/hr</strong></td>
+        <td><span class="risk-pill rp-medium">MEDIUM (I-E)</span></td>
+        <td class="mit-tag">
+          · hw_gate AND condition (independent veto)<br>
+          · CRC-16 covers spike counts + fault mask + thresholds<br>
+          · Shadow register pair on fault_mask<br>
+          · 8-gate independent checks
+        </td>
+        <td class="gap-tag">
+          ⚠ hw_gate only partially mitigates (correlated sensor can fool both)<br>
+          ⚠ spread_max_deg not CRC-covered
+        </td>
+      </tr>
+      <tr>
+        <td><span class="rank-num rank-2">3</span></td>
+        <td><span class="fn-name">app_publish_thresholds()</span></td>
+        <td><span class="mod-tag">app_params</span></td>
+        <td>
+          <strong style="color:#aaaa44">Missing/bypassed gate</strong><br>
+          QM layer publishes g_safety_thresholds. If spread_max_deg or anchor_max_deg are
+          corrupted to a permissive value, evaluate_stability() may pass when it should fail.
+        </td>
+        <td><strong style="color:#ddcc44">E<br>Improbable</strong></td>
+        <td><strong style="color:#ddcc44">~5×10⁻⁷/hr</strong></td>
+        <td><span class="risk-pill rp-medium">MEDIUM (I-E)</span></td>
+        <td class="mit-tag">
+          · CRC covers omega_stable_dps + spike_accel_g<br>
+          · QM→safety boundary publish function<br>
+          · params_valid() range check before publish<br>
+          · hw_gate independent of spread_max_deg
+        </td>
+        <td class="gap-tag">
+          ⚠ spread_max_deg NOT covered by CRC-16<br>
+          ⚠ anchor_max_deg NOT covered by CRC-16<br>
+          ⚠ Deliberate design gap — recommend extending CRC coverage
+        </td>
+      </tr>
+      <tr>
+        <td><span class="rank-num">4</span></td>
+        <td>
+          <span class="fn-name">push_sample()</span><br>
+          <small style="color:var(--dim)">s_tilt_buf (6 KB, unprotected)</small>
+        </td>
+        <td><span class="mod-tag">safety_stability</span></td>
+        <td>
+          <strong style="color:#44aa66">RAM / bit-flip corruption</strong><br>
+          Unprotected 6 KB tilt buffer (s_tilt_buf, s_accel_mag_buf) corrupted via DTCM
+          bit-flip. Corrupt tilt data could cause compute_window_tilt_spread() to return
+          a low (favorable) spread value. Effectively eliminated by hw_gate AND.
+        </td>
+        <td><strong style="color:#66cc88">F<br>Eliminated</strong></td>
+        <td><strong style="color:#66cc88">~10⁻¹⁰/hr</strong></td>
+        <td><span class="risk-pill rp-elim">ELIMINATED (I-F)</span></td>
+        <td class="mit-tag">
+          · hw_gate runs on ASM330LHB Cortex-M0+, independent of Teensy DTCM<br>
+          · s_buf_head, s_buf_count CRC-covered<br>
+          · RTWDOG3 catches hung loops
+        </td>
+        <td class="gap-tag">Theoretical residual only if DTCM fault is correlated with SPI bus corruption</td>
+      </tr>
+      <tr>
+        <td><span class="rank-num">5</span></td>
+        <td><span class="fn-name">compute_window_tilt_spread()</span></td>
+        <td><span class="mod-tag">safety_stability</span></td>
+        <td>
+          <strong style="color:#44aa66">RAM / bit-flip corruption</strong><br>
+          Buffer pointer or count corruption yields wrong spread value.
+          Eliminated by hw_gate AND condition.
+        </td>
+        <td><strong style="color:#66cc88">F<br>Eliminated</strong></td>
+        <td><strong style="color:#66cc88">~10⁻¹⁰/hr</strong></td>
+        <td><span class="risk-pill rp-elim">ELIMINATED (I-F)</span></td>
+        <td class="mit-tag">
+          · s_buf_head, s_buf_count CRC-16 covered<br>
+          · hw_gate independent confirmation
+        </td>
+        <td class="gap-tag">—</td>
+      </tr>
+      <tr>
+        <td><span class="rank-num">6</span></td>
+        <td><span class="fn-name">safety_crc_ok()</span></td>
+        <td><span class="mod-tag">safety_monitor</span></td>
+        <td>
+          <strong style="color:#44aa66">RAM / bit-flip corruption</strong><br>
+          CRC-16 CCITT-FALSE (poly 0x1021) collision: s_fault_mask corrupted to a
+          value whose CRC happens to match.
+        </td>
+        <td><strong style="color:#66cc88">F<br>Eliminated</strong></td>
+        <td><strong style="color:#66cc88">~10⁻⁸/hr</strong></td>
+        <td><span class="risk-pill rp-elim">ELIMINATED (I-F)</span></td>
+        <td class="mit-tag">
+          · CRC-16 HD=4, collision P = 1/65536 per change event<br>
+          · Shadow register pair (XOR = 0xFFFF) provides belt-and-suspenders<br>
+          · CRC covers 28 bytes: spike counts, buf ptrs, fault mask, thresholds
+        </td>
+        <td class="gap-tag">Residual: 1/65536 ≈ 0.0015% collision per single change event</td>
+      </tr>
+      <tr>
+        <td><span class="rank-num">7</span></td>
+        <td><span class="fn-name">fault_shadow_ok()</span></td>
+        <td><span class="mod-tag">safety_monitor</span></td>
+        <td>
+          <strong style="color:#44aa66">RAM / bit-flip corruption</strong><br>
+          Both s_fault_mask and s_fault_mask_inv corrupted to a consistent
+          complementary state (XOR still = 0xFFFF) while faults are masked.
+        </td>
+        <td><strong style="color:#66cc88">F<br>Eliminated</strong></td>
+        <td><strong style="color:#66cc88">~10⁻¹⁰/hr</strong></td>
+        <td><span class="risk-pill rp-elim">ELIMINATED (I-F)</span></td>
+        <td class="mit-tag">
+          · Complementary encoding requires simultaneous 2-word DTCM fault<br>
+          · CRC also covers fault mask independently
+        </td>
+        <td class="gap-tag">—</td>
+      </tr>
+      <tr>
+        <td><span class="rank-num">8</span></td>
+        <td><span class="fn-name">SAFE_OUT_PIN</span><br><small style="color:var(--dim)">(hardware GPIO)</small></td>
+        <td><span class="mod-tag">iMXRT1062 GPIO</span></td>
+        <td>
+          <strong style="color:#44aa66">Hardware fault</strong><br>
+          iMXRT1062 GPIO output driver transistor stuck HIGH, or wiring fault
+          between MCU pin and output stage.
+        </td>
+        <td><strong style="color:#66cc88">F<br>Eliminated</strong></td>
+        <td><strong style="color:#66cc88">~10⁻¹⁰/hr</strong></td>
+        <td><span class="risk-pill rp-elim">ELIMINATED (I-F)</span></td>
+        <td class="mit-tag">
+          · CR-4: SAFE_MON_PIN_HW GPIO readback at 833 Hz<br>
+          · Mismatch → FAULT_OUTPUT → drives to safe state<br>
+          · set_safe_output() readback check every ISR tick
+        </td>
+        <td class="gap-tag">Readback cannot detect fault if both source driver and readback share same net fault</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ── SECTION 4: METHODOLOGY ─────────────────────────────────────────────── -->
+<section>
+  <div class="section-title"><span class="num">4</span> Analysis Methodology &amp; Assumptions</div>
+  <div class="meth-grid">
+    <div class="meth-card">
+      <h4>Failure Mode Definition</h4>
+      <ul>
+        <li>Top event: SAFE_OUT_PIN = HIGH when platform is NOT mechanically stable</li>
+        <li>Safe state: LOW (de-energized, fail-safe)</li>
+        <li>All paths to false-HIGH enumerated deductively (top-down FTA)</li>
+        <li>All failure modes classified Severity I (Catastrophic)</li>
+      </ul>
+    </div>
+    <div class="meth-card">
+      <h4>Root Cause Categories</h4>
+      <ul>
+        <li>Software logic bug — incorrect gate/threshold conditions</li>
+        <li>RAM / bit-flip corruption — DTCM SEU or latch-up</li>
+        <li>Missing / bypassed gate — threshold not integrity-protected</li>
+        <li>Hardware fault — GPIO, IMU silicon, SPI bus</li>
+      </ul>
+    </div>
+    <div class="meth-card">
+      <h4>Key Architectural Finding</h4>
+      <ul>
+        <li>AND gate (sw_ok × hw_gate) eliminates independent paths</li>
+        <li>hw_gate runs on ASM330LHB Cortex-M0+ (independent silicon)</li>
+        <li>FSM_STABLE_NEED=3 provides 600 ms temporal hysteresis</li>
+        <li>Dominant risk is common-mode (correlated) sensor failure</li>
+      </ul>
+    </div>
+    <div class="meth-card">
+      <h4>MIL-STD-882E Standard</h4>
+      <ul>
+        <li>Table III Risk Assessment Matrix applied</li>
+        <li>Probability: D (Remote) = 10⁻⁶ ≤ P &lt; 10⁻³/hr</li>
+        <li>Probability: E (Improbable) = 10⁻⁸ ≤ P &lt; 10⁻⁶/hr</li>
+        <li>Probability: F (Eliminated) = P ≈ 0 by design</li>
+        <li>PFH estimates assume IEC 61508 SIL 3 operating environment</li>
+      </ul>
+    </div>
+    <div class="meth-card">
+      <h4>Recommended Corrective Actions</h4>
+      <ul>
+        <li style="color:#669944">✓ SPI config-register CRC-8 shadow implemented (CTRL1_XL / CTRL2_G / CTRL3_C / CTRL4_C, 200 ms, poly=0x07)</li>
+        <li style="color:#cc6644">Add SPI sensor data frame CRC — burst reads (12 B at 833 Hz) still unchecked; dominant path gap remains</li>
+        <li style="color:#cc8844">Extend CRC-16 coverage to include spread_max_deg + anchor_max_deg</li>
+        <li>Consider EMI shielding / power supply decoupling (common-mode)</li>
+        <li>Add power-on self-test (POST) for SPI bus integrity</li>
+      </ul>
+    </div>
+    <div class="meth-card">
+      <h4>Scope Limitations</h4>
+      <ul>
+        <li>False-LOW (missed stable event) not analyzed here</li>
+        <li>Quantitative PFH estimates are engineering approximations</li>
+        <li>External EMI / ESD quantification requires site survey</li>
+        <li>Mechanical output stage not in scope</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  Platform Stability Monitor · False-HIGH FTA · MIL-STD-882E / ISO 26262 ASIL D · 2026-05-28 ·
+  Analysis based on source code review: safety_isr.cpp, safety_monitor.cpp, safety_stability.cpp, safety_imu.cpp
+</footer>
+
+<script>
+// ── Fault Tree SVG Builder ────────────────────────────────────────────────────
+(function(){
+  const svg = document.getElementById('fta-svg');
+  const NS  = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs, children){
+    const e = document.createElementNS(NS, tag);
+    for(const [k,v] of Object.entries(attrs||{})) e.setAttribute(k,v);
+    if(children) children.forEach(c => typeof c==='string'
+      ? e.appendChild(document.createTextNode(c))
+      : e.appendChild(c));
+    return e;
+  }
+  function text(str, x, y, attrs){
+    return el('text',{x,y,'text-anchor':'middle','dominant-baseline':'middle',...attrs},[str]);
+  }
+  function rect(x,y,w,h,attrs){ return el('rect',{x,y,width:w,height:h,...attrs}); }
+  function circle(cx,cy,r,attrs){ return el('circle',{cx,cy,r,...attrs}); }
+  function line(x1,y1,x2,y2,attrs){ return el('line',{x1,y1,x2,y2,...attrs}); }
+  function polyline(pts,attrs){ return el('polyline',{points:pts.map(p=>p.join(',')).join(' '),...attrs}); }
+
+  // Colours
+  const C = {
+    topFill:'#2a0606', topStroke:'#882222',
+    intFill:'#14202e', intStroke:'#3a5870',
+    domFill:'#2a1000', domStroke:'#dd6622',
+    serFill:'#2a1200', serStroke:'#cc4422',
+    medFill:'#1c1c00', medStroke:'#888822',
+    lowFill:'#081408', lowStroke:'#336633',
+    orFill:'#0e240e',  orStroke:'#44aa44',
+    andFill:'#0e1a2a', andStroke:'#4477dd',
+    wire:'#3a5060',
+    textPri:'#d0dce8',
+    textDim:'#7090a0',
+    textSmall:'#507080',
+  };
+
+  // ── Node definitions ──────────────────────────────────────────────────────
+  // x,y = center; w,h for rects; r for circles
+  const nodes = {
+    TOP:  {x:630,y:52, w:280,h:68, fill:C.topFill, stroke:C.topStroke, strokeW:2,
+           lines:['FALSE HIGH','SAFE_OUT_PIN = HIGH when NOT stable'], ltype:'top'},
+    OR1:  {x:630,y:138, r:22, fill:C.orFill, stroke:C.orStroke, gate:'OR'},
+    IE1:  {x:175,y:262, w:240,h:86, fill:C.lowFill, stroke:C.lowStroke,
+           lines:['HW Output Stuck','GPIO driver HIGH','Pf ≈ 10⁻¹⁰/hr','Low (I-F) — CR-4 detected'], ltype:'leaf'},
+    IE2:  {x:865,y:262, w:256,h:86, fill:C.intFill, stroke:C.intStroke,
+           lines:['Safety Gates Bypassed','sw_ok AND hw_gate','both false-positive simultaneously'], ltype:'int'},
+    AND1: {x:865,y:365, r:22, fill:C.andFill, stroke:C.andStroke, gate:'AND'},
+    IE3:  {x:660,y:455, w:240,h:72, fill:C.medFill, stroke:C.medStroke,
+           lines:['SW False-Positive','evaluate_stability() = true','when not stable'], ltype:'int'},
+    IE4:  {x:1060,y:455, w:240,h:72, fill:C.medFill, stroke:C.medStroke,
+           lines:['HW FSM False-Positive','asm_fsm_read_stable() = true','when not stable'], ltype:'int'},
+    OR2:  {x:660,y:535, r:20, fill:C.orFill, stroke:C.orStroke, gate:'OR'},
+    OR3:  {x:1060,y:535, r:20, fill:C.orFill, stroke:C.orStroke, gate:'OR'},
+    BE1:  {x:510,y:648, w:210,h:80, fill:C.medFill, stroke:C.medStroke,
+           lines:['Logic Bug','evaluate_stability()','gate condition error','MEDIUM (I-E) · Pf~10⁻⁶/hr'], ltype:'leaf'},
+    BE2:  {x:740,y:648, w:220,h:80, fill:C.medFill, stroke:C.medStroke,
+           lines:['RAM / Threshold','spread_max_deg not CRC','tilt buffer unprotected','MEDIUM/LOW (I-E/F)'], ltype:'leaf'},
+    BE3:  {x:960,y:648, w:240,h:80, fill:C.domFill, stroke:C.domStroke, dom:true,
+           lines:['⚠ DOMINANT PATH','Correlated Sensor Failure','common-mode: EMI/supply','SERIOUS (I-D) · Pf~10⁻⁵/hr'], ltype:'dom'},
+    BE4:  {x:1165,y:648, w:200,h:80, fill:C.lowFill, stroke:C.lowStroke,
+           lines:['ASM330 FSM Bug','silicon error both chips','simultaneously wrong','LOW (I-F) · Pf~10⁻¹⁰/hr'], ltype:'leaf'},
+  };
+
+  // ── Wires (edges) — drawn first ──────────────────────────────────────────
+  // Helper: bottom of rect node, top of rect node, bottom of gate, top of gate
+  function nb(n){ return n.r ? [n.x, n.y+n.r] : [n.x, n.y+n.h/2]; } // node bottom
+  function nt(n){ return n.r ? [n.x, n.y-n.r] : [n.x, n.y-n.h/2]; } // node top
+
+  const wireStyle = {stroke:C.wire, 'stroke-width':'1.5', fill:'none'};
+
+  function drawWire(from, to){
+    const [x1,y1] = nb(nodes[from]);
+    const [x2,y2] = nt(nodes[to]);
+    // Use elbow routing: go down from source to midpoint y, then over to target x, then down
+    const midy = y1 + (y2-y1)*0.4;
+    const pts = [[x1,y1],[x1,midy],[x2,midy],[x2,y2]];
+    svg.appendChild(polyline(pts, wireStyle));
+  }
+
+  const wireOrder = [
+    ['TOP','OR1'],['OR1','IE1'],['OR1','IE2'],
+    ['IE2','AND1'],['AND1','IE3'],['AND1','IE4'],
+    ['IE3','OR2'],['IE4','OR3'],
+    ['OR2','BE1'],['OR2','BE2'],
+    ['OR3','BE3'],['OR3','BE4'],
+  ];
+  wireOrder.forEach(([a,b]) => drawWire(a,b));
+
+  // Dominant path highlight (OR3 → BE3)
+  {
+    const [x1,y1] = nb(nodes.OR3);
+    const [x2,y2] = nt(nodes.BE3);
+    const midy = y1 + (y2-y1)*0.4;
+    const pts = [[x1,y1],[x1,midy],[x2,midy],[x2,y2]];
+    svg.appendChild(polyline(pts, {stroke:'#dd6622','stroke-width':'2.5',fill:'none','stroke-dasharray':'6,3'}));
+  }
+
+  // ── Draw Nodes ────────────────────────────────────────────────────────────
+  for(const [id, n] of Object.entries(nodes)){
+    const g = el('g',{});
+
+    if(n.gate){
+      // Gate circle
+      const c = circle(n.x, n.y, n.r, {fill:n.fill, stroke:n.stroke, 'stroke-width':'1.5'});
+      g.appendChild(c);
+      g.appendChild(text(n.gate, n.x, n.y, {fill: n.stroke, 'font-size':'11', 'font-weight':'700', 'letter-spacing':'0.5'}));
+    } else {
+      // Event rectangle
+      const rr = rect(n.x-n.w/2, n.y-n.h/2, n.w, n.h, {
+        fill:n.fill, stroke:n.stroke,
+        'stroke-width': n.strokeW||1.5,
+        rx:'5'
+      });
+      if(n.dom) rr.setAttribute('class','dom-glow');
+      g.appendChild(rr);
+
+      // Lines of text
+      const lcount = n.lines.length;
+      const lineH = Math.min(14, (n.h - 8) / lcount);
+      const startY = n.y - (lcount-1)*lineH/2;
+      n.lines.forEach((ln, i) => {
+        const isFirst = i===0;
+        const isDom = n.ltype==='dom' && i===0;
+        const tNode = text(ln, n.x, startY + i*lineH, {
+          fill: isDom ? '#ff8840' : (isFirst ? '#d0dce8' : '#708090'),
+          'font-size': isDom ? '11' : (isFirst && n.ltype !== 'leaf' ? '11' : '9.5'),
+          'font-weight': isFirst ? '700' : '400',
+          'font-family': 'Segoe UI, system-ui, sans-serif',
+        });
+        g.appendChild(tNode);
+      });
+
+      // ASIL/risk badge for top event
+      if(n.ltype === 'top'){
+        const badge = el('g',{});
+        badge.appendChild(rect(n.x+80, n.y+12, 52, 16, {fill:'#3a0808', stroke:'#882222', rx:'3'}));
+        badge.appendChild(text('ASIL D', n.x+106, n.y+20, {fill:'#ff6666','font-size':'9','font-weight':'700'}));
+        g.appendChild(badge);
+      }
+    }
+
+    svg.appendChild(g);
+  }
+
+  // ── Annotations ───────────────────────────────────────────────────────────
+  // Label the AND gate
+  svg.appendChild(text('AND gate:', 755, 340, {fill:'#4477dd','font-size':'9.5', 'text-anchor':'end'}));
+  svg.appendChild(text('sw_ok × hw_gate', 755, 352, {fill:'#4477dd','font-size':'9.5', 'text-anchor':'end', 'font-style':'italic'}));
+
+  // Label the dominant path arrow
+  svg.appendChild(text('dominant path', 1085, 600, {fill:'#dd6622','font-size':'9','font-style':'italic'}));
+
+  // Bottom annotation
+  svg.appendChild(text('hw_gate runs on ASM330LHB Cortex-M0+ — independent of Teensy DTCM RAM', 630, 715, {fill:'#3a5060','font-size':'9.5'}));
+})();
+</script>
+</body>
+</html>
