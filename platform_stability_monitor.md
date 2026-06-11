@@ -1,7 +1,8 @@
 # platform_stability_monitor.md
 
-Platform Stability Monitor — Teensy 4.1 + BNO085  
-Technical Reference — Rev 1.0 (post-remediation, SIL 2 audit applied)
+Platform Stability Monitor v2 — Teensy 4.1 + ASM330LHB × 2 (SPI)  
+Technical Reference — Rev 2.0 (ASIL-D / SIL-3 refactor, dual-channel ASM330LHB)  
+Date: 2026-06-03
 
 ---
 
@@ -19,49 +20,51 @@ Technical Reference — Rev 1.0 (post-remediation, SIL 2 audit applied)
 
 ## 1. System Overview
 
-The Platform Stability Monitor (PSM) determines whether a physical platform is stationary and level. It samples a BNO085 IMU at 100 Hz, applies a multi-criterion stability algorithm over a rolling 1–5 s window, and asserts a single digital output (`SAFE_OUT_PIN`) HIGH when the platform is confirmed stable.
+The Platform Stability Monitor (PSM) determines whether a physical platform is stationary and level. It samples two independent ASM330LHB IMUs at 833 Hz over SPI, runs a Mahony complementary filter on each channel, applies a multi-criterion stability algorithm over a rolling window, and asserts a single digital output (`SAFE_OUT_PIN`) HIGH when the platform is confirmed stable.
 
-The system is intended to approach **IEC 61508 SIL 2**, meaning it must tolerate random hardware faults and systematic software failures with a probability of dangerous failure per hour (PFH) ≤ 10⁻⁶. It does **not** currently achieve certified SIL 2 — specific gaps are documented in §7.
+The system targets **IEC 61508 SIL 3 / ISO 26262 ASIL D / MIL-STD-882E Category I**. It does not hold a formal certification — specific gaps are documented in §7. All six critical findings (CR-1 through CR-6) and key major/minor findings from the prior SIL-2 audit have been remediated in this version.
 
 **Primary decision boundary:** `g_platform_stable` is set TRUE only when all of the following hold simultaneously:
 
-- No active fault flags (`s_fault_mask == 0`)
-- Fault shadow register is consistent (`fault_shadow_ok()`)
-- CRC-16 over critical counters passes (`safety_crc_ok()`)
-- Window buffer is fully populated
+- No active fault flags (`effective_faults() == 0`)
+- Fault shadow register consistent (`fault_shadow_ok()`)
+- CRC-16 over 36 bytes of critical state passes (`safety_crc_ok()`)
+- Window buffer fully populated
 - Gyro spike count ≤ `motion_samples_max`
 - Accel spike count ≤ `shock_samples_max`
 - Tilt spread (centroid radius) ≤ `spread_max_deg`
 - Instant-hold timer expired
 - ISR frozen-watchdog flag clear
+- Hardware FSM gate passes (both channels)
 - Absolute tilt anchor within `anchor_max_deg`
 
-**Fail-safe direction:** any fault, communications failure, hardware error, or software integrity violation drives the output LOW (not stable). The system is fail-safe by default.
+**Fail-safe direction:** any fault, communication failure, hardware error, or software integrity violation drives the output LOW. The system is fail-safe by default.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Platform Stability Monitor                │
-│                                                             │
-│   ┌──────────┐   I2C 400kHz   ┌──────────────────────────┐ │
-│   │  BNO085  │◄──────────────►│       Teensy 4.1          │ │
-│   │  IMU     │                │   (iMXRT1062 Cortex-M7)  │ │
-│   └──────────┘                │                          │ │
-│                               │  ┌────────┐ ┌─────────┐ │ │
-│   ┌──────────┐                │  │IntervalTimer ISR    │ │ │
-│   │SAFE_OUT  │◄───────────────│  │100 Hz  │ │WDT 1.5s │ │ │
-│   │PIN 2     │                │  └────────┘ └─────────┘ │ │
-│   └─────┬────┘                │                          │ │
-│         │ 100Ω ESD            │  ┌──────────────────────┐│ │
-│   ┌─────▼────┐                │  │ Stability Algorithm  ││ │
-│   │SAFE_MON  │────────────────│  │ + Fault Monitor      ││ │
-│   │PIN 4     │  readback      │  └──────────────────────┘│ │
-│   └──────────┘                │                          │ │
-│                               │  ┌──────────────────────┐│ │
-│   ┌──────────┐                │  │  HTTP/1.1 API        ││ │
-│   │ Ethernet │◄───────────────│  │  (QNEthernet)        ││ │
-│   │ (ENET)   │                │  └──────────────────────┘│ │
-│   └──────────┘                └──────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                    Platform Stability Monitor v2                      │
+│                                                                       │
+│  ┌────────────────┐  SPI1 4 MHz  ┌──────────────────────────────────┐│
+│  │  ASM330LHB-A   │◄────────────►│          Teensy 4.1               ││
+│  │  CS=10  INT=8  │  CS_A=10     │     (iMXRT1062 Cortex-M7)         ││
+│  └────────────────┘  MISO=1      │                                   ││
+│                       MOSI=26    │  ┌──────────┐ ┌─────────────────┐││
+│  ┌────────────────┐  SCK=27      │  │timerISR  │ │  RTWDOG3 1.5s   │││
+│  │  ASM330LHB-B   │◄────────────►│  │ 833 Hz   │ │  LPO 1 kHz clk  │││
+│  │  CS=9   INT=7  │  CS_B=9      │  └──────────┘ └─────────────────┘││
+│  └────────────────┘              │                                   ││
+│                                  │  ┌───────────────────────────────┤│
+│  ┌────────────────┐              │  │ Mahony A + Mahony B (833 Hz)  ││
+│  │  SAFE_OUT      │◄─────────────│  │ Stability FSM + Fault Monitor ││
+│  │  PIN 2         │              │  └───────────────────────────────┤│
+│  └──────┬─────────┘              │                                   ││
+│         │ 100 Ω                  │  ┌───────────────────────────────┤│
+│  ┌──────▼─────────┐              │  │ HTTP/1.1 dashboard+API        ││
+│  │  SAFE_MON      │─────────────►│  │ QNEthernet 192.168.168.71     ││
+│  │  PIN 3 (pulldown)│  readback  │  └───────────────────────────────┘│
+│  └────────────────┘              └──────────────────────────────────-─┘
+│                                                                       │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -72,223 +75,257 @@ The system is intended to approach **IEC 61508 SIL 2**, meaning it must tolerate
 
 **What it is:** NXP iMXRT1062 Cortex-M7 at 600 MHz. 1 MB SRAM (DTCM + OCRAM), 8 MB flash (QSPI), hardware FPU (double-precision), DWT cycle counter.
 
-**Why used:** High clock speed enables floating-point stability math in the 100 Hz sample loop without timing margin issues. Teensyduino provides a mature Arduino-compatible HAL covering I2C, timers, interrupts, and EEPROM emulation. Built-in ENET MAC eliminates an external Ethernet chip.
+**Why used:** The 600 MHz clock provides ample headroom for two Mahony filter instances, floating-point stability math, and SPI at 833 Hz without timing margin risk. Teensyduino provides a mature HAL. Built-in ENET MAC eliminates an external Ethernet chip.
 
 **Internal features used:**
 
 | Feature | Usage |
 |---|---|
-| `IntervalTimer` | 100 Hz ISR via FlexTimer/PIT peripheral |
+| `IntervalTimer` | 833 Hz ISR via FlexTimer/PIT peripheral |
 | `RTWDOG3` (WDOG3) | Watchdog — 1500 ms timeout, LPO 1 kHz clock |
 | `SRC_SRSR` | System Reset Controller — reset-cause register, W1C |
 | `ARM_DWT_CYCCNT` | DWT cycle counter — ISR period measurement |
 | `EEPROM` (emulated) | Persistent parameter storage (FlexNVM) |
-| `Wire` (I2C1) | SDA=18, SCL=19, 400 kHz |
+| `SPI1` | SCK=27, MOSI=26, MISO=1, 4 MHz, SPI_MODE3 |
 | ENET MAC | Built-in Ethernet controller (QNEthernet driver) |
-| GPIO | `SAFE_OUT_PIN` (2), `SAFE_MON_PIN` (4), `BNO_RST_PIN` (3), LED (13) |
+| GPIO | `SAFE_OUT_PIN`=2, `SAFE_MON_PIN_HW`=3 (INPUT_PULLDOWN), LED=13, LIGHT=4 |
+| GPIO | `IMU_A_CS`=10, `IMU_B_CS`=9, `IMU_A_INT`=8, `IMU_B_INT`=7 |
 
-**Stack:** Default Teensyduino stack is 8 KB. PSM monitors usage via a watermark; warns (FAULT_INTEGRITY) if > 6 KB consumed.
+**Stack:** Default Teensyduino stack is 8 KB. PSM monitors usage via a watermark; sets `FAULT_INTEGRITY` if > 6 KB consumed.
 
-**Reset-cause logging:** At `setup()`, `SRC_SRSR` is read and cleared (W1C). The decoded cause (POR, WDOG3, WDOG1/2, user reset, ENET WDOG2) is printed to Serial. This is the only persistent reset-cause record; no EEPROM logging is implemented.
+**Reset-cause logging:** `SRC_SRSR` is read and cleared (W1C) at startup. The decoded cause (POR, WDOG3, WDOG1, user reset) is printed to Serial.
 
 ---
 
-### 2.2 BNO085 IMU
+### 2.2 ASM330LHB IMU (× 2)
 
-**What it is:** Bosch BNO085 (SH-2 sensor hub). Contains a 3-axis accelerometer, 3-axis gyroscope, and an internal ARM Cortex-M0+ running Bosch's SHTP sensor fusion firmware.
+**What it is:** STMicroelectronics ASM330LHB — automotive-grade 6-axis IMU (3-axis accel, 3-axis gyro) with embedded finite-state-machine processor. AEC-Q100 Grade 0.
 
-**Why used:** The on-chip fusion firmware provides calibrated gyro/accel reports and a Game Rotation Vector (quaternion) without a separate AHRS implementation on the host. The calibration engine continuously corrects gyro bias.
+**Why used:** Automotive-qualified MEMS with an on-chip embedded FSM provides a hardware-level motion detection gate independent of the host MCU software. Dual independent channels allow cross-validation and divergence detection.
 
-**Communication:** I2C at 400 kHz. Address `0x4A` (SA0=LOW) or `0x4B` (SA0=HIGH). SparkFun BNO08x v2.x library (SH-2 SHTP protocol). Three reports subscribed at 100 Hz (10 ms period):
+**Configuration (both channels):**
 
-| Report ID | Data | Conversion |
+| Register | Value | Meaning |
 |---|---|---|
-| `SENSOR_REPORTID_GYROSCOPE_CALIBRATED` | ωx, ωy, ωz rad/s | × (180/π) → dps |
-| `SENSOR_REPORTID_ACCELEROMETER` | ax, ay, az m/s² | ÷ 9.80665 → g |
-| `SENSOR_REPORTID_GAME_ROTATION_VECTOR` | quaternion (w, i, j, k) | ZYX Euler → roll/pitch/yaw |
+| `CTRL1_XL` | `0x70` | Accel: 833 Hz ODR, ±2 g FS |
+| `CTRL2_G` | `0x74` | Gyro: 833 Hz ODR, ±500 dps FS |
+| `CTRL3_C` | `0x44` | BDU=1 (block data update), IF_INC=1 |
+| `CTRL4_C` | `0x08` | DRDY_MASK=1 |
+| `INT1_CTRL` | `0x03` | XLDA + GDA interrupt on INT1 |
 
-**DCD calibration pause:** The BNO085 internal watchdog periodically writes dynamic calibration data (DCD) to internal flash. During this ~400 ms save the Game Rotation Vector report can pause. To avoid false COMM faults, COMM fault is gated only on gyro+accel staleness, not GRV. If GRV is stale, tilt falls back to raw accelerometer gravity decomposition.
+**Sensitivities:**  
+- Accel: 61 µg/LSB at ±2 g → `ASM_ACCEL_SENS_G = 0.000061`  
+- Gyro: 17.5 mdps/LSB at ±500 dps → `ASM_GYRO_SENS_DPS = 0.01750`
 
-**Hardware reset:** `BNO_RST_PIN` (pin 3) is driven LOW for 10 ms to hardware-reset the BNO085. Used at startup and in `imu_recover()`. Boot time after RST de-assertion is ~300 ms.
+**IMU-B axis remap:** IMU-B is mounted on the reverse side with 90° rotation relative to IMU-A. Before all comparison and fusion logic, IMU-B raw vectors are remapped: `B.x = B.y, B.y = B.x, B.z = −B.z` (derived from live gravity vector alignment).
 
-**I2C recovery:** If the I2C bus hangs (SDA stuck low), `wire_reset()` bit-bangs 9 SCL pulses to release the device, then generates a STOP condition and re-initialises `Wire`. This is sufficient for most stuck-device scenarios but is not a guaranteed bus recovery for all fault modes.
+**Embedded FSM:** Each sensor's on-chip FSM (FSM1) is configured as a motion-detection gate. `asm_fsm_read_stable()` polls `FSM_STATUS_A` bit 0. Only when both channels report FSM-stable for `FSM_STABLE_NEED` = 3 consecutive evaluations does the `hw_gate` pass. This provides an independent hardware check of the software stability decision.
 
 ---
 
-### 2.3 SAFE_OUT_PIN / SAFE_MON_PIN — Safety Output Circuit
+### 2.3 SPI1 Bus
 
-**What it is:** A GPIO output (`SAFE_OUT_PIN`, pin 2) asserts HIGH when `g_platform_stable == true`. A separate GPIO input (`SAFE_MON_PIN`, pin 4, `INPUT_PULLDOWN`) is wired to the same net and reads back the actual voltage on that net.
+Both IMUs share the same SPI1 bus (MISO=1, MOSI=26, SCK=27) with separate chip-select lines (CS_A=10, CS_B=9). This means the physical MISO signal is common to both channels — a stuck-MISO fault could potentially affect both simultaneously.
 
-**Why used:** Detects output driver faults (stuck-at-HIGH, stuck-at-LOW) that a pure software flag cannot detect. Required for SIL 2 — output integrity must be independently verified.
+**Mitigations for shared-bus risk:**
+1. Separate CS lines: only one sensor is active per transaction.
+2. Config CRC-8 shadow: per-channel ODR/range register integrity checked every 200 ms (§4.4).
+3. CRC-8 burst frame freeze: per-channel 12-byte burst CRC checked every sample (§4.5).
+4. Common-mode lock detection: pre-remap channel identity check catches stuck-MISO (§4.11).
 
-**Wiring requirement:**  
-`SAFE_MON_PIN` must be wired directly to the `SAFE_OUT_PIN` net. Use ≤100 Ω series (ESD only). Do **not** use 10 kΩ — the internal PULLDOWN (~10 kΩ) creates a voltage divider that may not cross the logic-HIGH threshold.
+---
 
-**Fault policy:**
+### 2.4 SAFE_OUT / SAFE_MON Circuit
+
+**What it is:** `SAFE_OUT_PIN` (pin 2, OUTPUT) asserts HIGH when `g_platform_stable == true`. `SAFE_MON_PIN_HW` (pin 3, `INPUT_PULLDOWN`) is wired to the same net via ≤ 100 Ω and independently reads back the actual net voltage.
+
+**Why used:** Detects output driver faults (stuck-at-HIGH, stuck-at-LOW) that pure software cannot detect. Required for SIL 3 output integrity.
+
+**Startup dual-state check (CR-4, added Rev 2.0):**  
+During `safety_init()`, before any other logic, the system drives SAFE_OUT_PIN LOW → reads SAFE_MON_PIN_HW → drives HIGH → reads → drives LOW again. Both states must agree. Failure sets `FAULT_OUTPUT` before Serial is even opened. This catches shared-net faults where both driver and readback are stuck at the same voltage.
+
+**Runtime readback policy:**
 
 ```
 set_safe_output(stable):
+  if g_output_inhibit: drive LOW, return
+
   drive SAFE_OUT_PIN = stable
-  read SAFE_MON_PIN → mon_high
+  delayMicroseconds(10)
+  read SAFE_MON_PIN_HW → mon_high
 
   if (stable == true) && (mon_high == false):
       fault_set(FAULT_OUTPUT)      ← net LOW when HIGH commanded
-                                      (wire missing or driver stuck LOW)
   if (stable == false) && (mon_high == true):
       fault_set(FAULT_INTEGRITY)   ← net HIGH when LOW commanded — CRITICAL
-                                      (driver or external load stuck HIGH)
   if (stable == true) && (mon_high == true):
-      fault_clr(FAULT_OUTPUT)      ← confirm wire functional
+      fault_clr(FAULT_OUTPUT)      ← confirm path functional
 
-  NOTE: FALSE readback pass does NOT clear FAULT_OUTPUT.
-        Only a TRUE readback pass clears it. Prevents TRUE→FALSE
-        oscillation from masking a persistent wiring fault.
+  NOTE: FAULT_OUTPUT only clears via a successful TRUE readback pass.
+        FALSE readback does not clear it — prevents oscillation masking.
 ```
+
+**Wiring requirement:** ≤ 100 Ω series only (ESD). Do not use 10 kΩ — the internal PULLDOWN (~100 kΩ) forms a voltage divider that may not cross the logic-HIGH threshold.
 
 ---
 
-### 2.4 Ethernet Interface (QNEthernet)
+### 2.5 Ethernet Interface (QNEthernet)
 
-**What it is:** Teensy 4.1's built-in ENET MAC + external PHY, driven by the QNEthernet library (lwIP-based). Static IP: `192.168.168.71/24`.
+Teensy 4.1's built-in ENET MAC + external PHY, driven by QNEthernet (lwIP-based). Static IP: `192.168.168.71/24`, GW `192.168.168.1`.
 
-**Why used:** Provides a web-based dashboard and REST API for monitoring and parameter tuning without a USB or serial connection.
-
-**Safety note:** Ethernet MAC bring-up can take >1500 ms. It is initialised *before* the watchdog is armed to prevent a false WDT reset during startup.
+**Safety note:** Ethernet PHY link-up can take several seconds. The WDT is temporarily widened to 8000 ms during `app_init()` and restored to 1500 ms afterward. The ISR is not started until after Ethernet init completes, preventing false `FAULT_FROZEN` during link-up.
 
 ---
 
 ## 3. Software Architecture
 
-### 3.1 Single-File Structure
+### 3.1 Module Layout
 
-The entire application is one `.ino` file (`platform_stability.ino`). No RTOS. Execution model is `setup()` + bare-metal `loop()` with one ISR.
+21-file modular architecture split into two strict layers. The independence rule is enforced: `safety/` headers must never `#include` any `app/` header.
+
+```
+safety/
+  safety_defs.h       — all #defines, fault codes, SafetyThresholds, SafetyStatus structs
+  safety_types.h      — Tilt, Mahony, StabFSM
+  safety_monitor.h/cpp — WDT (RTWDOG3), fault shadow pair, CRC-16 CCITT, RAM march,
+                         stack, set_safe_output, fatal
+  safety_imu.h/cpp    — SPI driver, self-test, config CRC-8 shadow, burst CRC-8 freeze,
+                         hardware FSM, sensor reads
+  safety_ahrs.h/cpp   — Mahony complementary filter (833 Hz, yaw excluded)
+  safety_stability.h/cpp — window buffer, spread, FSM, evaluate_stability, g_safety_status
+  safety_isr.h/cpp    — 833 Hz timerISR, imu_recover, safety_tick, safety_init
+
+app/
+  app_params.h/cpp    — Params struct, EEPROM load/save, params_valid, app_publish_thresholds
+  app_http.h/cpp      — Ethernet init, web server, /api/status|params|js, /config,
+                        HTML dashboard
+  app_light.h/cpp     — LED output toggle (pin 4), /light/toggle endpoint
+```
+
+**One-way data flow:**
+- `SafetyThresholds g_safety_thresholds` — app writes after `params_valid()`, safety reads
+- `SafetyStatus g_safety_status` — safety writes each eval cycle, app reads (const volatile)
+
+### 3.2 Setup and Loop Execution Order
 
 ```
 setup():
-  GPIO init → RAM march test → DWT enable → EEPROM params load
-  → reset-cause log → I2C init → BNO085 init+enable → wait first reports
-  → Ethernet init → WDT arm → stack base capture → timer ISR start
+  1. params_load() + app_publish_thresholds()   ← thresholds valid before tick 1
+  2. safety_init()                               ← GPIO, startup readback check, SPI, Serial,
+                                                    RAM march, IMU init, self-test, FSM,
+                                                    Mahony, WDT(1500ms)
+  3. Serial: print params outcome
+  4. WDT widened to 8000 ms
+  5. app_init() + light_init()                  ← Ethernet, web server
+  6. WDT restored to 1500 ms
+  7. safety_start_isr()                         ← start 833 Hz timer (deferred to prevent
+                                                    false FAULT_FROZEN during Ethernet init)
 
-loop() [runs continuously, ~>1000 Hz unloaded]:
-  wdt_feed()
-  s_loop_alive_token++          ← ISR frozen-watchdog keepalive
-  check s_forced_unsafe_isr
-  web server (non-blocking)
-  heartbeat (1 Hz Serial)
-  atomic read s_timing_fault_isr
-  if s_sample_due > 0:
-      bno_poll()                ← drain SH2 events
-      data freshness check → COMM fault
-      sensor range checks → GYRO_RANGE / ACCEL_RANGE faults
-      push_sample()             ← buffer + CRC refresh
-  if eval period (200 ms):
-      imu_recover() if needed
-      stack watermark update
-      compute_window_tilt_spread()
-      diverse_stable() → FAULT_DIVERSE
-      evaluate_stability()
-      anchor check
-      set_safe_output()
-      Serial status line
+loop() [~833 Hz or higher]:
+  safety_tick()    ← WDT feed, AHRS, stability eval, output control, status print
+  app_tick()       ← web server accept/handle, Ethernet.loop()
 ```
 
-### 3.2 ISR (`timerISR`)
+### 3.3 Timer ISR (`timerISR`, 833 Hz)
 
-Fires at exactly 100 Hz via `IntervalTimer` (Teensyduino FlexTimer/PIT). Two responsibilities:
+Fires at exactly 833 Hz via `IntervalTimer`. Four responsibilities:
 
-**1. Sample tick:**  
-Increments `s_sample_due` (capped at 255). `loop()` atomically reads and clears it. If `s_sample_due > 1` on read, samples were missed and `s_missed_samples` is incremented.
+**1. ISR-period timing check:**  
+DWT `ARM_DWT_CYCCNT` measures the interval between consecutive ISR firings. Expected: `F_CPU / 833` = 720,288 cycles. Tolerance: ±5% = ±36,014 cycles. Jitter beyond this sets `s_timing_fault_isr` (read-cleared atomically by `loop()` with `noInterrupts()`).
 
-**2. ISR-period timing check:**  
-Uses `ARM_DWT_CYCCNT` (600 MHz cycle counter) to measure the interval between consecutive ISR firings. Expected: 600,000,000 / 100 = 6,000,000 cycles. Tolerance: ±5% = ±300,000 cycles. Jitter beyond this sets `s_timing_fault_isr` (atomic: cleared by `loop()` with `noInterrupts()`).
+**2. Sample tick:**  
+Increments `s_sample_due` (capped at 255). `loop()` atomically reads and clears it. `s_sample_due > 1` means missed samples; `s_missed_samples` is incremented accordingly.
 
-**3. Frozen-loop watchdog:**  
-Every ISR tick checks whether `s_loop_alive_token` changed since last tick. If unchanged for `FROZEN_TICKS_MAX` = 26 consecutive ticks (~260 ms), the ISR directly drives `SAFE_OUT_PIN` and LED LOW using `digitalWriteFast()`, and sets `s_forced_unsafe_isr = true`. This forces unsafe output well before the 1500 ms WDT fires.
+**3. Stability decimation tick:**  
+`s_stability_div_cnt` counts to `STABILITY_DIV` = 8 before incrementing `s_stability_due`, decimating the 833 Hz sample stream to ~104 Hz for buffer push and spread computation.
+
+**4. Frozen-loop watchdog (CR-5):**  
+`s_loop_alive_token` is written by `loop()` each iteration. If unchanged for `FROZEN_TICKS_MAX` = 26 consecutive ISR ticks (~31 ms at 833 Hz), the ISR directly drives both `SAFE_OUT_PIN` and LED LOW via `digitalWriteFast()`, and sets `s_forced_unsafe_isr = true` (sticky — cleared only by `imu_recover()`). This pre-empts the 1500 ms WDT for transient freezes.
+
+### 3.4 Stability Algorithm
+
+**833 Hz sample block (`s_sample_due > 0`):**
+1. Read sensors A and B via `asm_read_sensors()` (SPI burst, CRC-8 freeze check, range plausibility).
+2. Common-mode check: compare pre-remap float vectors from A and B. If identical for ≥ 3 consecutive reads → `FAULT_INTEGRITY`.
+3. Axis remap IMU-B.
+4. Update stale counters for A and B; set `FAULT_IMU_A/B_COMM` after `stale_fault_ticks` consecutive failures.
+5. `mahony_update()` on both instances at 833 Hz.
+6. Extract roll/pitch from each Mahony quaternion.
+7. Compute ω = `|gyro|` and accel magnitude; apply `isnan` + range checks.
+8. Dual-diverge check: if `|roll_A − roll_B| > dual_diverge_deg` OR `|pitch_A − pitch_B| > dual_diverge_deg` → `FAULT_DUAL_DIVERGE`.
+9. Update `s_instant_hold_until` if `ω > omega_instant_dps`.
+
+**~104 Hz stability tick (`s_stability_due > 0`):**
+- If no channel faults: fuse A+B tilt (average unless B degraded) → `push_sample()` → writes buffer slot, updates spike counts, refreshes CRC-16.
+- If channel fault active: force output false, skip push.
+
+**200 ms evaluation tick (every `eval_period_ms`):**
+1. WHO_AM_I health check on both channels (3-failure debounce).
+2. Config CRC-8 shadow check on both channels (3-failure debounce → `FAULT_IMU_A/B_COMM`).
+3. `imu_recover()` if any recover-triggering fault active (exponential back-off).
+4. Stack watermark update.
+5. `compute_window_tilt_spread()` — centroid mean of window, max radius from centroid.
+6. `diverse_stable()` — window mean accel mag vs 1 g ± `diverse_mean_tol_g` → `FAULT_DIVERSE`.
+7. Dual-diverge clean streak → `fault_clr(FAULT_DUAL_DIVERGE)` after `clean_streak_needed` passes.
+8. Hardware FSM gate: read `FSM_STATUS_A` from each channel. `hw_gate = (s_fsm_stable_cnt >= FSM_STABLE_NEED)` = 3 consecutive both-channel FSM-stable readings.
+9. `evaluate_stability(spread)` — all-pass gate (shadow, CRC, faults, hold, fill, spikes, spread).
+10. Stability FSM (`SFST_INIT → SFST_FILLING → SFST_STABLE / SFST_UNSTABLE / SFST_FAULT`).
+11. Anchor check: on first stable reading, set `s_stable_anchor`. On subsequent stable readings, if `tilt_distance_deg(current, anchor) > anchor_max_deg` → force unstable, invalidate anchor.
+12. `set_safe_output(g_platform_stable)` — drive + readback.
+13. Status line print (5 s cadence), update `g_safety_status`.
+
+### 3.5 IMU Recovery
+
+`imu_recover(b_only)` is called from the 200 ms eval loop when `FAULT_IMU_A/B_COMM`, `FAULT_FROZEN`, or `FAULT_SELFTEST` is active. Exponential back-off: `min(3000 × 2^n, 30000)` ms.
 
 ```
-timerISR() [@ 100 Hz]:
-  DWT delta check → s_timing_fault_isr
-  s_sample_due++
-  __DSB()                     ← memory barrier before token check
-  if token unchanged for FROZEN_TICKS_MAX ticks:
-      digitalWriteFast(SAFE_OUT_PIN, LOW)
-      s_forced_unsafe_isr = true   ← sticky, cleared only by imu_recover()
+imu_recover(b_only):
+  if peak_omega still high: decay × 0.9 and abort (avoid recovery during motion)
+  stop IntervalTimer
+  reset sample/stability counters (noInterrupts)
+  set_safe_output(false)
+  asm_frozen_burst_reset for target channel(s)
+  asm_init() for target channel(s)   ← includes SW reset + WHO_AM_I check
+  asm_self_test() for target channel(s)
+  wait for fresh sensor data (3 s timeout)
+  if b_only: seed Mahony-B from Mahony-A quaternion (prevents FAULT_DUAL_DIVERGE transient)
+  else:       mahony_init(A + B)
+  asm_fsm_configure() for target channel(s)
+  fault_reset_all()
+  reset_stability_state()
+  s_forced_unsafe_isr = false   ← ONLY place this is cleared
+  restart IntervalTimer
 ```
 
-**ISR constraints:** No heap allocation, no blocking calls, no I2C. `digitalWriteFast()` is used (register-direct, no locking). Shared variables accessed from `loop()` are wrapped in `noInterrupts()/interrupts()`.
+**IMU-B degradation:** After `IMU_B_DEGRADE_AFTER` = 4 consecutive B recovery failures, `s_imu_b_degraded` is set. The system falls back to IMU-A single-channel mode. `FAULT_IMU_B_COMM` and `FAULT_DUAL_DIVERGE` are suppressed in `effective_faults()` while degraded. Degradation is logged to Serial and reflected in `g_safety_status.imu_b_degraded`.
 
-### 3.3 Stability Algorithm
+### 3.6 EEPROM Parameters
 
-Executed every `eval_period_ms` = 200 ms after the sample buffer is sufficiently populated.
+`Params` struct stored at EEPROM address 0. Magic `0xBE4F0002`, version `3` (invalidates all BNO085-era and prior ASM330LHB v2 EEPROM images).
 
-**Step 1 — Buffer fill:**  
-100 Hz samples accumulate in a circular buffer (`s_tilt_buf`, `s_accel_mag_buf`), `WINDOW_SAMPLES_MAX` = 500 entries. Default window = 1 s = 100 samples. Window is tunable 1–5 s via EEPROM.
+On load, `params_valid()` checks: magic + version match, `isfinite()` on all float fields (rejects NaN/Inf before range comparisons — NaN silently passes `<`/`>` checks), and range bounds for every field.
 
-**Step 2 — Spike counting:**  
-Per-sample slot arrays (`s_gyro_spike_slot`, `s_accel_spike_slot`) track whether each slot contained a spike. When a slot is overwritten, its old spike contribution is decremented before writing the new one, keeping `s_spike_gyro_count` and `s_spike_accel_count` accurate without a full window scan.
+If validation fails, compile-time defaults are used. `app_publish_thresholds()` copies validated `g_params` into `g_safety_thresholds` (atomic, under `noInterrupts()`) and calls `refresh_safety_crc()` to update the CRC-16 with the new threshold values.
 
-- Gyro spike: `|ω|` > `omega_stable_dps` (20 dps)
-- Accel spike: `| |a| − 1g |` > `spike_accel_g` (0.1 g)
+Parameters are updated via `POST /config` with auth token. Update path: parse body → `params_valid()` → apply to `g_params` → `params_save()` (EEPROM write under `noInterrupts()`, WDT fed around write) → `app_publish_thresholds()`.
 
-**Step 3 — Instant hold:**  
-If `|ω|` > `omega_instant_dps` (45 dps), a hold timer is set for `instant_hold_ms` (250 ms). `evaluate_stability()` returns false until the timer expires. Protects against transient spikes that clear the spike window before evaluation.
+### 3.7 HTTP API
 
-**Step 4 — Tilt computation:**  
-Preferred: quaternion from GRV report → ZYX Euler (roll, pitch, yaw). Fallback (GRV stale): atan2-based accel decomposition for roll/pitch; yaw held at last known value.
-
-Yaw is **excluded** from all stability distance calculations — gyro-integrated yaw accumulates drift and conflates platform rotation with instability. Only roll and pitch enter `tilt_distance_deg()`.
-
-**Step 5 — Centroid spread:**  
-`compute_window_tilt_spread()` computes the mean roll/pitch over the window, then returns the maximum Euclidean distance from any sample to that centroid. This is order-independent (not biased by the oldest sample). Limit: `spread_max_deg` = 7.5° (centroid radius ≈ 15° diameter equivalent).
-
-**Step 6 — Diversity check:**  
-`diverse_stable()` computes the mean accelerometer magnitude over the window and checks it is within `diverse_mean_tol_g` (0.1 g) of 1g. Detects free-fall, sustained vibration, or a non-gravity-aligned sensor. Sets `FAULT_DIVERSE`.
-
-**Step 7 — `evaluate_stability()`:**  
-```
-evaluate_stability(spread):
-  if !fault_shadow_ok()                 → FAULT_INTEGRITY, return false
-  if !safety_crc_ok()                   → FAULT_INTEGRITY, return false
-  if s_fault_mask != 0                  → return false
-  if instant_hold active                → return false
-  if buf_count < window_samples         → return false
-  if gyro_spikes > motion_samples_max   → return false
-  if accel_spikes > shock_samples_max   → return false
-  if spread > spread_max_deg            → return false
-  return true
-```
-
-**Step 8 — Anchor:**  
-On first TRUE result, the current (roll, pitch) is stored as `s_stable_anchor`. On every subsequent TRUE evaluation, the current tilt is checked against the anchor. If drift exceeds `anchor_max_deg` (8°), the platform is declared unstable and the anchor is invalidated. This catches slow creep that doesn't exceed the window spread threshold.
-
-### 3.4 EEPROM Parameters
-
-All stability thresholds are stored in a `Params` struct (EEPROM address 0) with magic `0xBE4F0001` and version `2`. On load, `params_valid()` checks:
-
-- Magic + version match
-- `isfinite()` on all float fields (rejects NaN/Inf before range comparisons — NaN passes all `<`/`>` checks silently)
-- Range bounds for all fields
-
-If validation fails, defaults (`PARAMS_DEFAULT`) are used. Version was bumped to `2` when `spread_max_deg` semantics changed from diameter to centroid radius; this invalidates any v1 EEPROM stored by a previous firmware.
-
-Parameters are updated via HTTP `POST /config` with auth token. The update path: parse → `params_valid()` → apply to `g_params` → `params_save()` → timer stop → state reset → timer restart.
-
-### 3.5 HTTP API
-
-Hosted on port 80 at `192.168.168.71`. Single-client (one `EthernetClient` slot). Idle client timeout: 500 ms.
+Hosted on port 80. Single-client slot, 500 ms idle timeout.
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/` | GET | HTML dashboard (inline JS + CSS) |
-| `/api/status` | GET | JSON: stable, fault, why, fill, spikes, angles, spread |
+| `/` | GET | HTML dashboard (inline CSS + JS polling) |
+| `/api/status` | GET | JSON: stable, fault_mask, why, fsm, fill%, angles A+B, spread, spikes, imu_b_degraded |
 | `/api/params` | GET | JSON: current `g_params` |
-| `/api/js` | GET | Polling JS for dashboard (embeds auth token) |
-| `/config` | POST | Update + save parameters (auth required) |
+| `/api/js` | GET | Dashboard polling JS (auth token injected via `data-auth` HTML attribute, not in JS) |
+| `/config` | POST | Update + save parameters (auth required, `params_valid()` gate) |
 | `/test/toggle-output` | POST | Toggle `g_output_inhibit` for bench testing (auth required) |
+| `/light/toggle` | POST | Toggle app_light LED on pin 4 (auth required) |
 
-WDT feeds are placed: entry, after header read, after body read, and around each `flush()`. Auth is a shared secret (`CONFIG_AUTH_TOKEN`) delivered in the POST body URL-encoded. **Default token `"psm-change-me-v1"` must be changed before deployment.**
+Auth: shared `CONFIG_AUTH_TOKEN` in POST body (URL-encoded). Compared via `ct_token_eq()` (constant-time, prevents timing side-channel). **Default token `"psm-change-me-v1"` must be changed before deployment.** Token is injected into the HTML `data-auth` attribute server-side and never placed in JavaScript source or API responses.
 
-`g_output_inhibit` suppresses the physical output for bench testing. It is `volatile` and **not** EEPROM-backed — it clears on every power cycle and WDT reset. Stability evaluation continues normally when inhibit is active.
+`g_output_inhibit` suppresses physical output for bench testing. It is `volatile`, not EEPROM-backed, and clears on power cycle or WDT reset.
 
 ---
 
@@ -296,271 +333,338 @@ WDT feeds are placed: entry, after header read, after body read, and around each
 
 ### 4.1 Watchdog Timer (RTWDOG3)
 
-**What:** iMXRT1062 RTWDOG3 (NXP RM RTWDOG peripheral, Teensyduino name `WDOG3`). Clocked from the 1 kHz LPO (Low-Power Oscillator). TOVAL register value = timeout in milliseconds.
-
-**Configuration:**  
+**Configuration:**
 ```
-Timeout:    1500 ms
-Clock:      LPO 1 kHz (CLK=01)
-CMD32EN:    1  (32-bit refresh word required)
-UPDATE:     1  (allows reconfiguration)
-Unlock:     two consecutive 32-bit writes (0xD928C520, 0xB480A602)
-Refresh:    single 32-bit write (0xB480A602, CMD32EN=1 mode)
+Timeout:  1500 ms (8000 ms temporarily during Ethernet init)
+Clock:    LPO 1 kHz (CLK=01)
+CMD32EN:  1  (32-bit refresh word required)
+UPDATE:   1  (reconfiguration allowed)
+Unlock:   two consecutive 32-bit writes (0xD928C520, 0xB480A602)
+Refresh:  single 32-bit write (0xB480A602)
 ```
 
-**Placement:**  
-- Armed **after** all init (Ethernet MAC can take >1500 ms).
-- `wdt_feed()` called: start of every `loop()` iteration, at `bno_poll()` entry, in `imu_recover()` around each blocking delay, and around each `flush()` in `http_handle()`.
+`wdt_feed()` is called every `timerISR()` tick (833 Hz) -- independent of `loop()`. It is also called in `safety_init()`/`imu_recover()` around each blocking delay and in `params_save()` around the EEPROM write, for the windows where the ISR is stopped.
 
-**Interaction with ISR frozen-watchdog:**  
-The ISR fires unsafe output at ~260 ms of loop freeze. WDT resets the MCU at 1500 ms. The ISR path is faster and avoids a full system reset for transient freezes.
+**Decoupling app_tick() from the WDT:** Feeding from the ISR (not from `safety_tick()`/`loop()`) means a hang anywhere in `app_tick()` (e.g. a stuck Ethernet/HTTP poll) cannot starve RTWDOG3 and force a full MCU reset. Only a true MCU lockup -- where the 833 Hz ISR itself stops firing (hard fault, IRQs masked) -- still hits the 1500 ms WDT reset.
 
-**Reset-cause:** WDOG3 resets set bit 5 of `SRC_SRSR`. Logged at next startup.
+**Interaction with ISR frozen-watchdog:** The ISR fires unsafe output at ~31 ms of loop freeze regardless of WDT state. For a `loop()`/`app_tick()` hang that leaves interrupts enabled, this is now the *only* fail-safe path -- the WDT keeps being fed by the ISR and will not reset the MCU, so `SAFE_OUT_PIN` stays LOW (and `FAULT_FROZEN` stays latched) until `app_tick()` returns and `safety_tick()`'s fast-recovery path clears it.
 
-**Limitations:**  
-- Single internal watchdog. For SIL 2, an independent external watchdog IC (e.g., MAX706) windowed against the internal WDT provides fail-safe coverage for internal WDT faults.
-- WDT is not set to window mode — a runaway loop that feeds the WDT at high frequency would not be caught.
+**Reset-cause:** WDOG3 resets set bit 7 of `SRC_SRSR`. Logged to Serial at next startup.
 
-### 4.2 Complementary Shadow Register (Fault Mask)
+**Limitations:** Single internal watchdog, no window mode. A tight busy-loop in the ISR itself (interrupts disabled) would not be caught by the WDT and would also defeat CR-5.
 
-**What:** `s_fault_mask` (uint8_t) stores active fault bits. `s_fault_mask_inv` stores its bitwise complement. Every `fault_set()` and `fault_clr()` updates both.
+---
 
-**Check:** `fault_shadow_ok()` returns `(s_fault_mask ^ s_fault_mask_inv) == 0xFF`. Any single-bit flip in either variable (RAM fault, stack corruption, compiler scheduling issue) causes a mismatch, which triggers `FAULT_INTEGRITY` and blocks stable output.
+### 4.2 Fault Shadow Register
 
-**Coverage:** Detects stuck-at faults in the fault register itself. Does not cover the tilt buffer or spike count arrays.
+**What:** `s_fault_mask` (uint16_t) stores active fault bits. `s_fault_mask_inv` stores its bitwise complement. Every `fault_set()` / `fault_clr()` updates both atomically (under `noInterrupts()`).
 
-**ISR note:** `fault_set/clr` are called only from `loop()`. If ever called from ISR, the call site must be wrapped in `noInterrupts()/interrupts()` to prevent interleaved shadow corruption.
+**Check:** `fault_shadow_ok()` returns `(s_fault_mask ^ s_fault_mask_inv) == 0xFFFF`. Any single-bit flip in either word causes a mismatch → `FAULT_INTEGRITY` → blocks stable output.
 
-### 4.3 CRC-16 (CCITT-FALSE)
+**ISR-safe variants:** `fault_set_from_isr()` / `fault_clr_from_isr()` — no `noInterrupts()` guard (ISR is already non-preemptible). Used only in the timer ISR's frozen-watchdog path.
 
-**What:** CRC-16 with polynomial `0x1021`, initialisation `0xFFFF`. Covers 16 bytes:
+---
+
+### 4.3 CRC-16 CCITT-FALSE (36 bytes)
+
+**Polynomial:** `0x1021`, init `0xFFFF`. Hamming Distance 4 — detects all 1, 2, and 3-bit errors in covered data.
+
+**Covered data (36 bytes total):**
 
 ```
-s_spike_gyro_count   (4 bytes, little-endian)
-s_spike_accel_count  (4 bytes, little-endian)
-s_buf_count          (4 bytes, little-endian)
-s_buf_head           (4 bytes, little-endian)
+s_spike_gyro_count    4 B  (little-endian)
+s_spike_accel_count   4 B
+s_buf_count           4 B
+s_buf_head            4 B
+s_fault_mask          2 B
+s_fault_mask_inv      2 B
+g_safety_thresholds.omega_stable_dps   4 B
+g_safety_thresholds.spike_accel_g      4 B
+g_safety_thresholds.spread_max_deg     4 B   ← added Rev 2.0
+g_safety_thresholds.anchor_max_deg     4 B   ← added Rev 2.0
 ```
 
-**Why CRC-16:** Hamming Distance 4 — detects all 1-, 2-, and 3-bit errors in covered data. Replaced a narrower CRC-8 during remediation.
+`spread_max_deg` and `anchor_max_deg` were previously uncovered; a RAM fault corrupting either threshold could produce a false-stable decision without triggering a CRC mismatch. Both are now integrity-protected.
 
-**Refresh:** `refresh_safety_crc()` is called every time any of the four covered variables changes (`push_sample()`, `reset_stability_state()`). `evaluate_stability()` calls `safety_crc_ok()` (recomputes and compares) before any stability decision.
+**Refresh:** `refresh_safety_crc()` is called after every `fault_set/clr/reset`, every `push_sample()`, every `app_publish_thresholds()`, and at the start of every `evaluate_stability()` call (which re-runs `safety_crc_ok()` independently).
 
-**Coverage gaps:**  
-- `s_tilt_buf` and `s_accel_mag_buf` are not CRC-covered.
-- `g_params` is validated once on EEPROM load; in-RAM corruption is not detected between evaluations.
-- `g_platform_stable` is re-derived each eval cycle from covered state, so its stored value is not directly CRC-checked (acceptable: it has a very short lifetime between evaluations).
+**Coverage gaps:** `s_tilt_buf` and `s_accel_mag_buf` (up to 520 × 3 floats ≈ 6 KB) are not CRC-covered. Corruption of these buffers could produce a false spread result without triggering a mismatch.
 
-### 4.4 RAM March Test
+---
 
-**What:** March C- algorithm over a dedicated 128-byte buffer (`march_buf`), run once at startup before any other logic.
+### 4.4 CRC-8 Config Register Shadow
 
-**Algorithm:**
+**What:** After every successful `asm_init()`, `cfg_snapshot_crc()` reads `{CTRL1_XL, CTRL2_G, CTRL3_C, CTRL4_C}` from the sensor and stores a CRC-8 (poly `0x07`, init `0xFF`) per channel in `s_cfg_crc[2]`.
+
+**Check:** Every 200 ms eval cycle, `asm_verify_config_crc()` re-reads the four registers and compares. Three consecutive failures set `FAULT_IMU_A/B_COMM`, triggering `imu_recover()`. This detects SPI-induced corruption of ODR or range settings that would silently change sensor output scale without triggering a WHO_AM_I failure.
+
+---
+
+### 4.5 CRC-8 Burst Frame Freeze Detection
+
+**What:** `asm_read_sensors()` computes CRC-8 (poly `0x07`, init `0xFF`) over all 12 raw burst bytes `buf[0..11]` on every read. The per-channel CRC is stored in `s_frame_crc[2]`.
+
+**Logic:** If the current CRC equals the stored CRC from the previous read, `s_frame_crc_frozen_cnt[idx]` is incremented. If the frozen counter reaches `FROZEN_BURST_TICKS` = 5 consecutive identical-CRC reads, `asm_read_sensors()` returns `false` (treated as stale). The counter resets on any CRC change.
+
+**Why this replaces the prior 3-axis gyro comparison:** The old check only compared `(gx_r, gy_r, gz_r)` — 6 of 12 bytes. The CRC-8 covers all 12 bytes (accel + gyro). Initialised to `0xAA` (not `0x00` or `0xFF`) so the first real read always differs from the init value, preventing a false frozen-flag at startup.
+
+`asm_frozen_burst_reset()` resets both `s_frame_crc[idx]` and `s_frame_crc_frozen_cnt[idx]`; called from `imu_recover()` before re-init.
+
+---
+
+### 4.6 RAM March Test
+
+**What:** March C− algorithm over a dedicated 128-byte `march_buf` (static volatile), run once at startup before any other logic.
+
+**Sequence:**
 ```
 Phase 0 (↑): write 0x00 to all cells
-Phase 1 (↑): read 0x00, write 0xFF
-Phase 2 (↑): read 0xFF, write 0x00
-Phase 3 (↓): read 0x00, write 0xFF
-Phase 4 (↓): read 0xFF, write 0x00
-Phase 5 (↑): read 0x00
+Phase 1 (↑): verify 0x00, write 0xFF
+Phase 2 (↑): verify 0xFF, write 0x00
+Phase 3 (↓): verify 0x00, write 0xFF
+Phase 4 (↓): verify 0xFF, write 0x00
+Phase 5 (↑): verify 0x00
 ```
 
-Detects stuck-at-0, stuck-at-1, transition faults, and address decoder coupling faults.
+Detects: stuck-at-0, stuck-at-1, transition faults, address-decoder coupling faults.
 
-**On failure:** LED blinks rapidly; system halts. Does not attempt recovery.
+**On failure:** LED blinks at ~5 Hz; system halts permanently.
 
-**Coverage gap (MI-2):** Only covers the 128-byte `march_buf`. The safety-critical DTCM globals (`s_fault_mask`, `s_tilt_buf`, `g_params`, etc.) are not march-tested. Full SIL 2 RAM coverage requires a linker-placed march over the entire DTCM data region at startup.
+**Coverage gap:** Only 128 bytes tested. Safety-critical DTCM globals (`s_fault_mask`, `s_tilt_buf`, `g_params`, etc.) are not march-tested.
 
-### 4.5 ISR Frozen-Loop Watchdog
+---
 
-**What:** At each 100 Hz ISR tick, `s_loop_alive_token` (written by `loop()` each iteration) is compared against `s_isr_token_last`. If unchanged for `FROZEN_TICKS_MAX` = 26 consecutive ticks (~260 ms):
+### 4.7 ISR Frozen-Loop Watchdog (CR-5)
+
+`s_loop_alive_token` (uint8_t) is incremented by `loop()` each iteration. At every 833 Hz ISR tick, if the token is unchanged from the previous tick, `s_isr_frozen_cnt` increments. At `FROZEN_TICKS_MAX` = 26 consecutive frozen ticks (~31 ms at 833 Hz):
 
 - `digitalWriteFast(SAFE_OUT_PIN, LOW)` — drives output unsafe directly from ISR
-- `s_forced_unsafe_isr = true` — sticky flag, checked at top of every `loop()` iteration
+- `s_forced_unsafe_isr = true` — sticky; checked at top of every `loop()` iteration
 
-**Recovery:** Only `imu_recover()` clears `s_forced_unsafe_isr`, and only after a successful IMU re-init. This prevents a post-freeze resume from automatically re-asserting stable output.
+**Recovery:** Only `imu_recover()` clears `s_forced_unsafe_isr`, and only after a complete successful re-init sequence. Prevents a post-freeze resume from automatically re-asserting stable output.
 
-**Why 260 ms threshold:** Faster than the 1500 ms WDT. Absorbs short I2C delays (typical `bno_poll()` < 5 ms) while catching genuine hangs quickly.
+**Fast-path for FAULT_FROZEN-only:** If `s_forced_unsafe_isr` is set but no IMU hardware fault exists, execution in `loop()` proves the loop is alive — the fast path clears `s_forced_unsafe_isr` and `FAULT_FROZEN` directly without `imu_recover()` overhead.
 
-### 4.6 ISR Timing Monitor
+**Known app-layer trigger (fixed):** `app_tick()` previously called `EthernetClient::stop()` after every HTTP request (every response sends `Connection: close`). QNEthernet's `stop()` busy-waits up to `connTimeout_` (default 1000 ms) inside `yield()`/`Ethernet.loop()` for the peer's FIN-ACK before returning. Whenever a client (browser GUI poll or curl) was slow to ACK the FIN, `loop()` blocked long enough to trip CR-5 — observed even with only the dashboard's idle 300 ms `/api/status` poll running. Fixed by using the non-blocking `EthernetClient::close()` instead, which sends the FIN and returns immediately; lwIP completes the close handshake in the background on subsequent `Ethernet.loop()` calls.
 
-**What:** DWT `ARM_DWT_CYCCNT` is sampled at each ISR entry. The expected period is `F_CPU / ODR_HZ` = 6,000,000 cycles. Tolerance: ±5% = ±300,000 cycles.
+---
 
-**On violation:** `s_timing_fault_isr = true`. `loop()` reads it atomically (`noInterrupts()`) and sets `FAULT_TIMING`. After `clean_streak_needed` (5) consecutive clean ticks, `FAULT_TIMING` is cleared.
+### 4.8 ISR Timing Monitor
 
-**Purpose:** Detects interrupt priority inversion, OS preemption (none here), or timer mis-configuration that could cause samples to be timestamped incorrectly.
+**What:** DWT `ARM_DWT_CYCCNT` is sampled at each ISR entry. Expected period: `F_CPU / AHRS_HZ` = `600,000,000 / 833` = 720,288 cycles. Tolerance: ±5%.
 
-### 4.7 Output Readback (SAFE_MON_PIN)
+**On violation:** `s_timing_fault_isr = true`. `loop()` reads it atomically and sets `FAULT_TIMING`. Clears after `clean_streak_needed` = 5 consecutive clean ISR ticks.
 
-Described in §2.3. Provides hardware-level output verification that is independent of the software flag. Two distinct fault bits (`FAULT_OUTPUT`, `FAULT_INTEGRITY`) distinguish "output cannot assert HIGH" from the critical "output cannot deassert LOW".
+**Purpose:** Detects interrupt priority inversion, timer mis-configuration, or CPU frequency changes that would cause the 833 Hz sample stream to be incorrectly timed, skewing the Mahony filter.
 
-### 4.8 Sensor Range Faults
+---
+
+### 4.9 Output Readback + Startup Dual-State Check (CR-4)
+
+**Startup dual-state check:** During `safety_init()`, before `ram_march_test()`, the system explicitly exercises both output states (LOW → HIGH → LOW) and verifies `SAFE_MON_PIN_HW` follows each transition (50 µs settle each). Failure sets `FAULT_OUTPUT`. This catches shared-net faults — cases where the driver net and the monitoring pin are both shorted to the same supply rail, rendering the runtime readback unable to distinguish intentional state from a fault.
+
+**Runtime readback:** Described in §2.4. Two distinct fault bits: `FAULT_OUTPUT` ("cannot assert stable") vs `FAULT_INTEGRITY` ("cannot deassert unsafe" — critical).
+
+**Residual:** The monitoring path cannot detect a stuck-at-stable net fault in the one scenario where both driver and readback share the same stuck-at-HIGH voltage AND the system is actively trying to assert stable. In that scenario, however, the output is correctly HIGH (safe), so no dangerous failure results.
+
+---
+
+### 4.10 Dual-Channel AHRS + Divergence Detection
+
+Two independent Mahony complementary filter instances (`s_imu_a`, `s_imu_b`) run at 833 Hz. Each produces its own roll/pitch estimate. Yaw is excluded from all stability calculations (gyro-integrated yaw drifts ~0.1 dps over a 1–5 s window and would produce false instability signals on a level but slowly rotating platform).
+
+**Mahony parameters:** Kp = 2.0, Ki = 0.005. Ki is normalised per-sample as `Ki / AHRS_HZ` to avoid integrator accumulation varying with sample rate.
+
+**Divergence check:** Each 833 Hz sample, if both channels are fresh:
+```
+if |roll_A − roll_B| > dual_diverge_deg OR |pitch_A − pitch_B| > dual_diverge_deg:
+    fault_set(FAULT_DUAL_DIVERGE)
+```
+Default `dual_diverge_deg` = 5.0°. Clears after `clean_streak_needed` consecutive evaluations within threshold. Suppressed in `effective_faults()` when IMU-B is degraded.
+
+**Common-mode limitation:** Both IMUs share the SPI1 MISO line. A common-mode MISO fault can corrupt both channels simultaneously in a way that preserves apparent agreement. The common-mode lock check (§4.11) partially mitigates this.
+
+---
+
+### 4.11 Common-Mode Channel Lock Detection
+
+**What:** After reading both sensors in the 833 Hz sample block, but before axis remapping IMU-B, the six pre-remap float values from A and B are compared exactly:
+
+```
+if ax_a == ax_b && ay_a == ay_b && az_a == az_b &&
+   gx_a == gx_b && gy_a == gy_b && gz_a == gz_b:
+     s_cm_cnt++
+     if s_cm_cnt >= 3: fault_set(FAULT_INTEGRITY)
+else:
+     s_cm_cnt = 0
+```
+
+**Why pre-remap floats:** Float equality ↔ raw int16 equality ↔ identical 12-byte SPI frames. Checking before remap means we compare the raw SPI data directly.
+
+**Threat addressed:** Stuck-MISO (both CS transactions receive the same signal) or accidental hardware wiring of both CS pins to the same physical device. Two truly independent 16-bit 6-axis sensors under thermal noise will essentially never produce bit-for-bit identical readings in three consecutive samples.
+
+**Limitation:** A common-mode fault that consistently produces distinct-but-wrong values from both channels (e.g., a bus corruption that maps consistently to two different wrong values) would not be caught by this check but would likely be caught by the divergence check or range faults.
+
+---
+
+### 4.12 Hardware FSM Gate
+
+Each ASM330LHB runs an on-chip FSM (FSM1) configured as a motion-stability classifier. The FSM output is polled every 200 ms eval cycle via `asm_fsm_read_stable()` (reads `FSM_STATUS_A` bit 0). Both channels must report stable for `FSM_STABLE_NEED` = 3 consecutive cycles (hw_gate). The FSM gate is a hardware-independent confirmation that the Mahony software stability decision is plausible.
+
+**Limitation:** Both FSM instances are configured identically from the same SPI transactions. A common-mode SPI configuration fault could corrupt both FSMs symmetrically. The config CRC-8 shadow (§4.4) detects configuration corruption. In degraded mode (IMU-B absent), `hw_b` is forced true so the gate does not deadlock.
+
+---
+
+### 4.13 Sensor Range Faults
 
 | Fault | Condition | Cleared after |
 |---|---|---|
-| `FAULT_GYRO_RANGE` | `isnan(ω)` or `ω > 248 dps` (99% of 250 dps FS) | `clean_streak_needed` = 5 clean samples |
+| `FAULT_IMU_A_COMM` | ≥ `stale_fault_ticks` consecutive failed reads OR 3× WHO_AM_I fail OR 3× config CRC fail | `imu_recover()` only |
+| `FAULT_IMU_B_COMM` | Same as above for IMU-B | `imu_recover()` only |
+| `FAULT_GYRO_RANGE` | `isnan(ω)` or `ω > gyro_range_fault_dps` (248 dps) | `clean_streak_needed` = 5 clean samples |
 | `FAULT_ACCEL_RANGE` | `isnan(|a|)` or `|a| < 0.05g` or `|a| > 4.4g` | `clean_streak_needed` = 5 clean samples |
-| `FAULT_IMU_COMM` | ≥ `stale_fault_ticks` (60) consecutive stale gyro+accel reports | Cleared by `imu_recover()` only |
-| `FAULT_DIVERSE` | Window mean accel mag not within 0.1g of 1g | `clean_streak_needed` = 5 clean evals |
+| `FAULT_DIVERSE` | Window mean accel mag not within `diverse_mean_tol_g` of 1 g | `clean_streak_needed` = 5 clean evals |
+| `FAULT_DUAL_DIVERGE` | `|roll_A − roll_B|` or `|pitch_A − pitch_B|` > `dual_diverge_deg` | `clean_streak_needed` = 5 clean evals |
 
-**COMM fault latency note (MA-6):** Stale data drives the output FALSE on the **first** stale tick. The 60-tick (~600 ms) window only delays activation of `imu_recover()`, which performs a hardware reset and re-init (380 ms blocking). During those 600 ms the system is already in the safe state.
+`stale_fault_ticks` default = 15 at 833 Hz = ~18 ms of consecutive failed reads. The output is already forced FALSE on the first stale read; the stale counter only gates `imu_recover()` activation.
 
-### 4.9 IMU Recovery
+---
 
-`imu_recover()` is called from the 200 ms evaluation loop when `FAULT_IMU_COMM` or `FAULT_FROZEN` is active. Exponential back-off: `min(3000 × 2^n, 30000)` ms.
+### 4.14 Self-Test
 
-```
-imu_recover():
-  stop IntervalTimer
-  set_safe_output(false)
-  RST pin LOW 10 ms → HIGH
-  delay 300 ms (BNO085 boot)
-  wire_reset()
-  delay 20 ms
-  IMU.begin() + bno_enable_reports()
-  wait for first gyro+accel reports (3 s timeout)
-  fault_reset_all()
-  reset_stability_state()
-  s_forced_unsafe_isr = false   ← ONLY place this is cleared
-  restart IntervalTimer
-  return true/false
-```
+`asm_self_test()` is run on both channels during `safety_init()` and after every `asm_init()` in `imu_recover()`. The procedure follows the ASM330LHB application note:
 
-### 4.10 Reset-Cause Logging
+1. Enable gyro self-test mode (`CTRL5_C[4:3] = 01`) → collect 5 samples → compare against baseline
+2. Enable positive accel self-test (`CTRL5_C[1:0] = 01`) → 5 samples
+3. Enable negative accel self-test (`CTRL5_C[1:0] = 10`) → 5 samples → compute symmetric average
 
-`SRC_SRSR` bits decoded at startup:
+Gyro acceptance band: 2143–10,000 LSB/5 per axis. Accel acceptance band: 328–13,934 LSB/5 per axis. Failure sets `FAULT_SELFTEST`.
 
-| Bit | Cause |
-|---|---|
-| 7 | WDOG2 (ENET MAC internal reset) |
-| 5 | WDOG3 (PSM watchdog) |
-| 4 | WDOG1/2 |
-| 3 | IPP user reset |
-| 0 | Power-on reset (POR) |
+---
 
-Logged to Serial only. Not stored in EEPROM. Monitoring of WDT resets in production requires a connected Serial terminal or an EEPROM log extension.
+### 4.15 Stack Watermark
 
-### 4.11 Stack Watermark
+SP is captured in `setup()` as `s_stack_base`. Each 200 ms eval cycle, `stack_watermark_update()` captures current SP and updates `s_stack_min_sp`. If `s_stack_base − s_stack_min_sp > STACK_WARN_BYTES` (6144), `FAULT_INTEGRITY` is set. Teensy 4.1 default stack is 8 KB.
 
-SP is captured in `setup()` as `s_stack_base`. Each 200 ms eval period, `stack_watermark_update()` captures current SP and updates `s_stack_min_sp`. If `s_stack_base - s_stack_min_sp > STACK_WARN_BYTES` (6144), `FAULT_INTEGRITY` is set. Teensy 4.1 default stack is 8 KB.
+---
 
-### 4.12 Hang Checkpoint
+### 4.16 Hang Checkpoint
 
 `s_hang_cp` is set before each potentially blocking call and cleared after:
 
 | Value | Location |
 |---|---|
 | 0 | OK / idle |
-| 1 | Inside `bno_poll()` |
-| 2 | (reserved) |
-| 3 | Inside status-line `Serial.print` |
+| 1 | Inside `asm_read_sensors()` (SPI transactions) |
+| 3 | Inside status-line `Serial.println()` |
 
-Visible in the heartbeat log and the Serial status line as `cp=N`. If the WDT fires, the last `cp` value identifies the hang site.
+Captured as `hang_cp_snap` before the status print (MI-7: prevents the print from overwriting the checkpoint with its own marker before it is logged). Visible in the Serial status line as `cp=N`.
 
-### 4.13 EEPROM Config Authentication
+---
 
-`POST /config` and `POST /test/toggle-output` require `auth=<CONFIG_AUTH_TOKEN>` in the URL-encoded body. Requests with missing or wrong tokens receive HTTP 403 and leave `g_params` unchanged. Invalid config values are rejected by `params_valid()` before they reach runtime.
+### 4.17 EEPROM Config Authentication
+
+`POST /config` and `POST /test/toggle-output` require `auth=<token>` in the URL-encoded body. Auth uses `ct_token_eq()` — a constant-time comparison that processes every byte of both strings regardless of match outcome, preventing timing side-channel attacks. Tokens are injected into the HTML `data-auth` attribute server-side; they never appear in `/api/js` response body. Invalid parameters are rejected by `params_valid()` before any runtime state is touched.
 
 ---
 
 ## 5. Data Flow
 
-### 5.1 100 Hz Sample Path
+### 5.1 833 Hz Sample Path
 
 ```
-IntervalTimer ISR (10 ms)
-│
-├─ increment s_sample_due
-├─ DWT timing check → s_timing_fault_isr
-└─ frozen-loop check → s_forced_unsafe_isr
+timerISR (833 Hz)
+  ├─ DWT delta → s_timing_fault_isr
+  ├─ s_sample_due++
+  ├─ s_stability_div_cnt → s_stability_due every 8 ticks
+  └─ frozen-loop check → s_forced_unsafe_isr
 
 loop() detects s_sample_due > 0:
-│
-├─ bno_poll()
-│   └─ I2C read SH2 events
-│       ├─ GYRO report → s_bno_g{x,y,z}_dps, s_bno_gyro_ms
-│       ├─ ACCEL report → s_bno_a{x,y,z}_g, s_bno_accel_ms
-│       └─ GRV report → s_bno_q{w,i,j,k}, s_bno_grv_ms
-│
-├─ freshness check (DATA_FRESH_MS = 150 ms)
-│   ├─ stale → increment s_comm_stale_ticks → FAULT_IMU_COMM after 60 ticks
-│   └─ fresh → clear s_comm_stale_ticks
-│
-├─ sensor range checks → FAULT_GYRO_RANGE / FAULT_ACCEL_RANGE
-│
-├─ tilt from GRV quaternion (or accel fallback)
-│
-├─ push_sample(tilt, omega, accel_mag)
-│   ├─ write circular buffer slot
-│   ├─ update s_spike_gyro_count, s_spike_accel_count
-│   └─ refresh_safety_crc()
-│
-└─ update instant-hold timer
+  ├─ asm_read_sensors(A) + asm_read_sensors(B)
+  │     ├─ STATUS_REG check (0xFF → false)
+  │     ├─ SPI burst 12 bytes
+  │     └─ CRC-8 frame freeze check (5 consecutive identical CRCs → false)
+  │
+  ├─ common-mode lock check (pre-remap)
+  │     └─ 3× identical → FAULT_INTEGRITY
+  │
+  ├─ axis remap IMU-B
+  │
+  ├─ stale counters → FAULT_IMU_A/B_COMM after stale_fault_ticks failures
+  │
+  ├─ mahony_update(A) + mahony_update(B)
+  ├─ mahony_to_tilt(A) + mahony_to_tilt(B)
+  │
+  ├─ range checks → FAULT_GYRO_RANGE / FAULT_ACCEL_RANGE
+  ├─ dual-diverge check → FAULT_DUAL_DIVERGE
+  └─ instant-hold arm if ω > omega_instant_dps
 ```
 
-### 5.2 200 ms Evaluation Path
+### 5.2 ~104 Hz Buffer Push Path
 
 ```
-loop() @ eval_period_ms (200 ms):
-│
-├─ imu_recover() if COMM/FROZEN fault [exponential back-off]
-├─ stack_watermark_update()
-│
-├─ compute_window_tilt_spread()
-│   └─ centroid of roll/pitch → max radius
-│
-├─ diverse_stable() → FAULT_DIVERSE
-│
-├─ evaluate_stability(spread) [all-pass gate]:
-│   ├─ fault_shadow_ok() → FAULT_INTEGRITY
-│   ├─ safety_crc_ok()   → FAULT_INTEGRITY
-│   ├─ s_fault_mask == 0
-│   ├─ instant-hold timer
-│   ├─ buffer fill
-│   ├─ gyro spike count
-│   ├─ accel spike count
-│   └─ spread limit
-│
-├─ anchor check → invalidate if drift > anchor_max_deg
-│
-└─ set_safe_output(g_platform_stable)
-    ├─ drive SAFE_OUT_PIN
-    └─ readback SAFE_MON_PIN → FAULT_OUTPUT / FAULT_INTEGRITY
+loop() detects s_stability_due > 0:
+  if effective_faults() == 0:
+    ├─ fuse tilt: average(A, B) [or A-only if IMU-B degraded]
+    ├─ push_sample(tilt, ω, |a|)
+    │     ├─ write circular buffer slot
+    │     ├─ update s_spike_gyro_count + s_spike_accel_count
+    │     └─ refresh_safety_crc()
+  else:
+    ├─ refresh_safety_crc()
+    └─ g_platform_stable = false, set_safe_output(false)
 ```
 
-### 5.3 Fault Handling Paths
+### 5.3 200 ms Evaluation Path
+
+```
+loop() @ eval_period_ms:
+  ├─ WHO_AM_I check A + B (3-fail debounce)
+  ├─ config CRC-8 check A + B (3-fail debounce → FAULT_IMU_A/B_COMM)
+  ├─ imu_recover() if recov_mask active [exponential back-off]
+  ├─ stack_watermark_update()
+  ├─ compute_window_tilt_spread() → centroid max-radius
+  ├─ diverse_stable() → FAULT_DIVERSE
+  ├─ dual_diverge_clean streak → fault_clr(FAULT_DUAL_DIVERGE)
+  ├─ hw_gate: FSM A + FSM B stable ≥ FSM_STABLE_NEED
+  ├─ evaluate_stability(spread):
+  │     ├─ fault_shadow_ok() → FAULT_INTEGRITY
+  │     ├─ safety_crc_ok()   → FAULT_INTEGRITY
+  │     ├─ effective_faults() == 0
+  │     ├─ instant-hold expired
+  │     ├─ buf_count ≥ window_samples
+  │     ├─ spike_gyro_count ≤ motion_samples_max
+  │     ├─ spike_accel_count ≤ shock_samples_max
+  │     └─ spread ≤ spread_max_deg
+  ├─ stability FSM (INIT→FILLING→STABLE/UNSTABLE/FAULT)
+  ├─ anchor check (tilt_distance_deg > anchor_max_deg → unstable + invalidate)
+  └─ set_safe_output(g_platform_stable)
+        ├─ drive SAFE_OUT_PIN
+        └─ readback SAFE_MON_PIN_HW → FAULT_OUTPUT / FAULT_INTEGRITY
+```
+
+### 5.4 Fault Handling Path
 
 ```
 Fault detected
-      │
-      ▼
-fault_set(FAULT_xxx) ──────────────────────────────────────────┐
-      │                                                         │
-      ▼                                                         │
-evaluate_stability() returns false ◄───────────────────────────┘
-      │
-      ▼
-g_platform_stable = false
-      │
-      ▼
-set_safe_output(false) → SAFE_OUT_PIN = LOW
+  │
+  ▼
+fault_set(FAULT_xxx) ──────────────────────────────────────────────┐
+  │                                                                 │
+  ▼                                                                 │
+effective_faults() != 0 → evaluate_stability() returns false ◄────┘
+  │
+  ▼
+g_platform_stable = false → set_safe_output(false) → SAFE_OUT_PIN = LOW
 
-If FAULT_IMU_COMM or FAULT_FROZEN:
-      │
-      ▼
-imu_recover() [back-off: 3s, 6s, 12s, 24s, 30s max]
-      │
-      ├── success: fault_reset_all() + reset_stability_state()
-      │            s_forced_unsafe_isr = false
-      │            → resume sampling
-      │
-      └── failure: retry at next back-off interval
-                   SAFE_OUT_PIN stays LOW
+If FAULT_IMU_A/B_COMM, FAULT_FROZEN, or FAULT_SELFTEST:
+  └─ imu_recover() [back-off: 3s, 6s, 12s, 24s, 30s max]
+       ├── success: fault_reset_all() + reset_stability_state()
+       │            s_forced_unsafe_isr = false, recover_attempts = 0
+       └── failure: retry at next back-off, IMU-B → degrade after 4 B-only failures
 
 If FAULT_INTEGRITY:
-      │
-      └── No auto-recovery. Requires power cycle or WDT reset.
-          (WDT fires at 1500 ms if loop continues without fix)
+  └─ No auto-recovery. Power cycle or WDT reset required.
 ```
 
 ---
@@ -569,115 +673,118 @@ If FAULT_INTEGRITY:
 
 ### 6.1 Fault Code Reference
 
-| Bit | Name | Trigger | Recovery |
+| Bits | Name | Trigger | Recovery |
 |---|---|---|---|
-| `0x01` | `FAULT_IMU_COMM` | 60 consecutive stale gyro+accel ticks (~600 ms) | `imu_recover()` |
-| `0x02` | `FAULT_GYRO_RANGE` | `|ω| > 248 dps` or NaN | 5 clean samples |
-| `0x04` | `FAULT_ACCEL_RANGE` | `|a| < 0.05g` or `> 4.4g` or NaN | 5 clean samples |
-| `0x08` | `FAULT_OUTPUT` | SAFE_MON reads LOW when HIGH commanded | TRUE readback pass |
-| `0x10` | `FAULT_FROZEN` | Loop frozen > 260 ms (ISR watchdog) | `imu_recover()` |
-| `0x20` | `FAULT_TIMING` | ISR period jitter > ±5% | 5 clean ISR ticks |
-| `0x40` | `FAULT_DIVERSE` | Window mean accel ≠ 1g ± 0.1g | 5 clean eval periods |
-| `0x80` | `FAULT_INTEGRITY` | Shadow mismatch, CRC fail, or stack depth > 6 KB | Power cycle / WDT |
+| `0x0001` | `FAULT_IMU_A_COMM` | ≥ `stale_fault_ticks` stale reads, or 3× WHO_AM_I fail, or 3× config CRC fail | `imu_recover()` |
+| `0x0002` | `FAULT_IMU_B_COMM` | Same for IMU-B | `imu_recover()` |
+| `0x0004` | `FAULT_GYRO_RANGE` | `|ω| > 248 dps` or NaN | 5 clean samples |
+| `0x0008` | `FAULT_ACCEL_RANGE` | `|a| < 0.05g` or `> 4.4g` or NaN | 5 clean samples |
+| `0x0010` | `FAULT_OUTPUT` | SAFE_MON reads LOW when HIGH commanded | TRUE readback pass |
+| `0x0020` | `FAULT_FROZEN` | Loop frozen > 26 ISR ticks (~31 ms) | `imu_recover()` |
+| `0x0040` | `FAULT_TIMING` | ISR period jitter > ±5% | 5 clean ISR ticks |
+| `0x0080` | `FAULT_DIVERSE` | Window mean accel mag ≠ 1 g ± 0.1 g | 5 clean eval periods |
+| `0x0100` | `FAULT_DUAL_DIVERGE` | `|roll_A − roll_B|` or `|pitch_A − pitch_B|` > 5° | 5 clean eval periods |
+| `0x0200` | `FAULT_SELFTEST` | Accel or gyro self-test out of acceptance band | `imu_recover()` |
+| `0x0400` | `FAULT_INTEGRITY` | Shadow mismatch, CRC fail, stack > 6 KB, common-mode lock, SAFE_MON stuck HIGH | Power cycle / WDT |
 
 ### 6.2 "Why Not Stable" Codes
 
-Printed in the Serial status line and returned in `/api/status`:
+Printed in the Serial status line (`why=...`) and returned in `/api/status`:
 
 | Code | Meaning |
 |---|---|
-| `OK` | Stable |
+| `OK` | Platform stable |
 | `DRIFT` | Anchor exceeded `anchor_max_deg` |
-| `SHADOW` | Fault shadow mismatch (`FAULT_INTEGRITY`) |
-| `CRC` | CRC-16 mismatch (`FAULT_INTEGRITY`) |
-| `FAULT` | Any `s_fault_mask` bit set |
-| `HOLD` | Instant-hold timer active |
-| `FILL` | Buffer not yet full |
-| `GYRO_SPK` | Gyro spike count over limit |
-| `ACCEL_SPK` | Accel spike count over limit |
-| `SPREAD` | Tilt spread over limit |
+| `SHADOW` | Fault shadow mismatch |
+| `CRC` | CRC-16 mismatch |
+| `FAULT` | Any `fault_mask` bit set (FSM in SFST_FAULT or fault bits active) |
+| `HOLD` | Instant-hold timer active post-motion |
+| `FILL` | Window buffer not yet full |
+| `GYRO_SPK` | Gyro spike count over `motion_samples_max` |
+| `ACCEL_SPK` | Accel spike count over `shock_samples_max` |
+| `SPREAD` | Tilt spread over `spread_max_deg` |
+| `HW_FSM` | Hardware FSM gate not passing (sensor FSM not stable) |
 | `UNKNOWN` | Stable=FALSE but no specific cause found |
 
 ### 6.3 Critical Failure Modes
 
-**BNO085 internal reset during operation:**  
-`bno_poll()` detects `IMU.wasReset()` and re-enables reports. If re-enable fails, `FAULT_IMU_COMM` is set immediately. Sensor hub resets with successful re-enable do not trigger a COMM fault; report timestamps are preserved (intentional — clearing them would cause false COMM fault before new events arrive).
+**IMU SPI communication failure:**  
+`asm_read_sensors()` returns false when STATUS_REG = 0xFF (SPI dead), data-not-ready persists after 50 µs retry, or CRC-8 burst freeze triggers after 5 identical frames. The stale counter increments; `FAULT_IMU_A/B_COMM` sets after `stale_fault_ticks` (default 15 = ~18 ms at 833 Hz). Output is already forced false on the first stale read. `imu_recover()` is called with exponential back-off.
 
-**I2C bus lockup:**  
-`wire_reset()` bit-bangs 9 SCL pulses. Works for most single-device clock-stretch hangs. Does not guarantee recovery for multi-master arbitration failure (not applicable here) or for hardware-level shorts.
+**Common-mode SPI fault:**  
+MISO stuck at a constant voltage returns all-same bytes, caught by CRC-8 burst freeze. A fault that returns the same valid-looking data for both CS transactions is caught by the common-mode lock detection (`FAULT_INTEGRITY` after 3 consecutive identical pre-remap vectors).
 
-**WDT false trigger during EEPROM write:**  
-`params_save()` calls `wdt_feed()` before and after `EEPROM.put()`. Flash write latency is several ms; the WDT margin is 1500 ms, so a single feed is sufficient, but the belt-and-suspenders double-feed eliminates margin concerns.
-
-**Floating SAFE_MON_PIN (wiring omitted):**  
-`INPUT_PULLDOWN` ensures an unwired pin reads LOW. A FALSE readback (output=LOW, mon=LOW) passes without fault. A TRUE readback (output=HIGH, mon=LOW) sets `FAULT_OUTPUT` — the system correctly refuses to assert stable and `FAULT_OUTPUT` remains set until the wire is installed and a TRUE readback passes.
+**Config register corruption:**  
+ODR or range setting changed by SPI glitch → CRC-8 shadow mismatch → `FAULT_IMU_A/B_COMM` → `imu_recover()` re-initialises and resets the shadow.
 
 **Stack overflow:**  
-Detected at 6 KB (watermark). 8 KB Teensy 4.1 default stack. Stack overflow past 8 KB corrupts globals silently — the watermark catches deep usage before the guard zone, but does not prevent overflow if a single call frame exceeds the remaining margin.
+Watermark catches > 6 KB usage and sets `FAULT_INTEGRITY`. Does not prevent overflow if a single call frame exceeds the remaining 2 KB margin; `FAULT_INTEGRITY` is non-recoverable (power cycle required).
+
+**Floating SAFE_MON_PIN (wiring omitted):**  
+`INPUT_PULLDOWN` holds unwired pin LOW. A FALSE readback (output=LOW, mon=LOW) passes without fault. A TRUE readback (output=HIGH, mon=LOW) sets `FAULT_OUTPUT` and blocks stable assertion. The startup dual-state check also fires `FAULT_OUTPUT` if the monitoring wire is absent and SAFE_OUT_PIN was HIGH during the HIGH phase of the check.
+
+**IMU-B permanent failure:**  
+After 4 consecutive B-only recovery failures, `s_imu_b_degraded` is set. Single-channel (A-only) operation continues. `FAULT_IMU_B_COMM` and `FAULT_DUAL_DIVERGE` are suppressed in `effective_faults()`. All independent-channel safety properties are degraded to single-sensor level while in this mode.
 
 ---
 
 ## 7. Limitations / Known Issues
 
-The following issues prevent the system from meeting IEC 61508 SIL 2 and are explicitly documented from the formal audit (11 findings, remediation steps applied).
+### 7.1 RAM March Test Coverage — Critical
 
-### 7.1 RAM March Test Coverage (MI-2) — Critical
+**Gap:** `ram_march_test()` covers only the 128-byte `march_buf`. DTCM globals (`s_fault_mask`, `s_fault_mask_inv`, `s_tilt_buf`, `g_params`, `s_imu_a`, `s_imu_b`, etc.) are not march-tested.
 
-**Gap:** `ram_march_test()` covers only the 128-byte `march_buf`. Safety-critical globals in DTCM (`s_fault_mask`, `s_fault_mask_inv`, `s_tilt_buf`, `g_params`, etc.) are not marched.
+**Required for SIL 3:** A linker-placed march test covering the entire DTCM data region at startup, executed before any variable initialisation that could mask a latent fault.
 
-**Required for SIL 2:** A linker-placed march test covering the entire DTCM data region at startup, before any variable initialisation that could mask faults.
+### 7.2 No Brownout Detection Configured
 
-### 7.2 No Brownout Detection / BOD (MI-8) — Major
+**Gap:** iMXRT1062 DCDC has a configurable brownout threshold, not currently set. Factory default trips at ~2.7 V. Under a slow power droop the CPU may execute erratically before the BOD fires.
 
-**Gap:** The iMXRT1062 DCDC controller has a configurable brownout threshold but is not configured. The factory default trips at ~2.7 V for the 3.3 V rail. Under a slow power droop, the CPU may execute erratically before the BOD fires.
-
-**Required for SIL 2:** Configure `DCDC_REG3[TRG]` and enable the BOD interrupt in NVIC for a controlled reset before CPU misbehaviour under supply droop.
+**Required for SIL 3:** Configure `DCDC_REG3[TRG]` and enable the BOD interrupt for a controlled reset before CPU misbehaviour under supply droop.
 
 ### 7.3 Default Config Auth Token (Security / Safety)
 
-**Gap:** `CONFIG_AUTH_TOKEN` is `"psm-change-me-v1"` and is embedded in the JavaScript served at `/api/js`. This means the token is visible in the browser and in HTTP traffic.
+**Gap:** `CONFIG_AUTH_TOKEN = "psm-change-me-v1"` is a public default. Any actor on the LAN can modify stability thresholds.
 
-**Required before deployment:** Change `CONFIG_AUTH_TOKEN` to a strong random secret. Consider moving the token out of the served JS (e.g., a separate admin interface on a different port or with HTTP Digest Auth).
+**Required before deployment:** Change `CONFIG_AUTH_TOKEN` to a strong, randomly generated secret before building the firmware for deployment.
 
 ### 7.4 Single Watchdog, No Window Mode
 
-**Gap:** One internal WDT (WDOG3), not windowed. A tight busy-loop that feeds the WDT at high frequency will not be caught.
+**Gap:** One internal WDT (WDOG3), not windowed. A tight busy-loop that feeds the WDT at high frequency would not be caught.
 
-**Required for SIL 2:** External watchdog IC (windowed, independent clock) or enable WDOG3 window mode so a feed that arrives too early is also flagged.
+**For SIL 3:** External windowed watchdog IC (independent clock) or enable WDOG3 window mode so a feed that arrives too early also triggers reset.
 
-### 7.5 No Independent Diverse Channel
+### 7.5 Shared SPI1 Bus — Residual Common-Mode Exposure
 
-**Gap:** Single-channel architecture — one MCU, one IMU, one WDT. IEC 61508 SIL 2 typically requires either redundant hardware channels or a rigorous formal proof of systematic capability.
+**Gap:** Both IMUs share the same physical MISO/MOSI/SCK conductors. A common-mode fault that produces two distinct but consistently wrong datasets (not identical — thus not caught by the lock check) could fool both channels simultaneously without triggering divergence.
 
-**Risk:** A common-cause failure (firmware bug, MCU hang, IMU miscommunication) can assert a false stable output without any independent check.
+**Mitigations in place:** Config CRC-8 shadow, burst CRC-8 freeze, common-mode lock detection, and dual-diverge check together cover the dominant failure scenarios. The residual is a correlated fault producing non-identical but consistently wrong output — this requires a hardware fault tolerant architecture (separate buses) to fully eliminate.
 
 ### 7.6 CRC Does Not Cover Tilt Buffer
 
-**Gap:** `s_tilt_buf` and `s_accel_mag_buf` (up to 500 × 3 floats = 6 KB) are not CRC-covered. A RAM corruption in the tilt buffer could produce a false stable tilt spread result without being detected.
-
-**Mitigation in place:** CRC covers the window head/count and spike counts. A corrupted tilt buffer that happens to produce a false spread result without changing head/count is possible.
+**Gap:** `s_tilt_buf` and `s_accel_mag_buf` (up to 520 × 3 floats ≈ 6 KB) are not CRC-covered. A RAM corruption affecting the tilt buffer could produce a false spread result without triggering a CRC mismatch. The CRC-16 covers `s_buf_count` and `s_buf_head` (buffer metadata), so a corruption that alters sample data without changing the metadata would be undetected.
 
 ### 7.7 No Certified Toolchain or MISRA Compliance
 
-**Gap:** Built with GCC (Teensyduino), which is not a TÜV-certified safety compiler. Code uses C++ features (lambdas in `http_handle`, `constexpr`, templates) that are excluded by MISRA C:2012. No static analysis tool results are recorded.
+**Gap:** Built with GCC (Teensyduino) — not a TÜV-certified safety compiler. Code uses C++ features excluded by MISRA C:2012. No static analysis results are recorded.
 
-**Required for SIL 2:** Either a certified compiler (e.g., TASKING, IAR with SC option) or a documented compiler qualification process. MISRA C compliance or documented deviations.
+**Required for SIL 3:** Certified compiler (e.g., TASKING, IAR with SC option) or documented qualification process. MISRA C compliance or documented deviations with rationale.
 
 ### 7.8 Reset-Cause Not Persisted to EEPROM
 
-**Gap:** WDT resets are logged to Serial only. If no terminal is connected, WDT reset events are silent. Post-mortem diagnosis in the field is not possible.
+**Gap:** WDT resets are logged to Serial only. Post-mortem diagnosis in the field (no Serial terminal) is not possible.
 
-**Recommendation:** Write `SRC_SRSR` and a timestamp (or loop count) to EEPROM on startup for offline diagnostics.
+**Recommendation:** Write `SRC_SRSR` value, firmware version, and a fault mask snapshot to EEPROM at startup for offline diagnostics.
 
-### 7.9 Auth Token in JavaScript (Security Regression)
+### 7.9 IMU-B Degrade Mode Reduces Fault Coverage
 
-**Gap:** `CONFIG_AUTH_TOKEN` is embedded in the JavaScript response from `/api/js` as `var PSM_AUTH='...'`. This exposes the token to any browser or network observer that loads the dashboard.
+**Gap:** When `s_imu_b_degraded` is true (IMU-B permanently failed), the system reverts to single-channel operation. All independent-channel safety properties — dual-diverge, common-mode lock detection, diversity check — are unavailable. The system ASIL/SIL level in this state is equivalent to a single-sensor system.
 
-**Mitigation:** This is acceptable for a single-network embedded deployment where the dashboard is only accessible on a trusted LAN. It is not acceptable for any internet-facing deployment.
+**Mitigation:** Degraded mode is logged to Serial, reflected in `g_safety_status.imu_b_degraded`, and reported in the web dashboard. An operator alarm on the `imu_b_degraded` field in `/api/status` is strongly recommended.
 
-### 7.10 Yaw Excluded from Stability (Design Note, Not a Defect)
+### 7.10 Yaw Excluded (Design Note)
 
-Yaw is excluded from `tilt_distance_deg()` and all spread/anchor calculations. This is intentional and correct — gyro-integrated yaw accumulates ~0.1 dps drift over the 1–5 s window, which would produce false instability signals for a platform that is physically level but slowly rotating. Yaw is retained in the `Tilt` struct and logged for diagnostics only.
+Yaw is excluded from all stability distance calculations by design. Gyro-integrated yaw accumulates ~0.1 dps of drift over a 1–5 s window and conflates platform rotation with instability. Yaw is retained in the `Tilt` struct for diagnostic use only.
 
 ---
 

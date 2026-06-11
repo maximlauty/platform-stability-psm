@@ -37,6 +37,13 @@ IntervalTimer s_sample_timer;
 // decimation ticks, and implements frozen-loop watchdog (CR-5).
 void timerISR()
 {
+    // WDT fed here, not in loop()/safety_tick(): an app_tick() hang (e.g. a
+    // stuck Ethernet/HTTP poll) must not starve RTWDOG3 and force a full MCU
+    // reset. CR-5 below already drives SAFE_OUT_PIN LOW within ~31 ms
+    // independent of loop(); a true MCU lockup (ISR itself stops) still hits
+    // the WDT normally since this feed stops too.
+    wdt_feed();
+
     if (s_isr_period_cyc != 0U) {
         uint32_t now_cyc = ARM_DWT_CYCCNT;
         if (s_isr_cyc_valid) {
@@ -99,6 +106,15 @@ bool imu_recover(bool b_only)
 
     if (!b_only) asm_frozen_burst_reset(IMU_A_CS_PIN);
     asm_frozen_burst_reset(IMU_B_CS_PIN);
+
+    // Re-init the LPSPI3 peripheral itself, not just the IMU chips. A wedged
+    // SPI1 module (e.g. FIFO/state-machine stuck after a transfer was cut
+    // short by a loop freeze) reads back 0xFF on every register regardless of
+    // CS -- asm_sw_reset() can't fix that since it has to talk over the same
+    // dead bus. SPI1.begin() resets the peripheral; .end() first ensures a
+    // clean re-init. Safe here: ISR/timer is stopped, no concurrent SPI use.
+    SPI1.end();
+    SPI1.begin();
 
     // asm_init() calls asm_sw_reset() internally (SPI flush + SW_RST + settle).
     // Do NOT call asm_sw_reset() here first -- the double-reset causes IMU to
@@ -197,6 +213,7 @@ void safety_tick()
     static uint32_t s_loop_count      = 0U;
     static uint32_t s_hbeat_ms        = 0U;
     static uint32_t s_status_ms       = 0U;
+    static uint8_t  s_cm_cnt          = 0U;
 
     wdt_feed();
     s_loop_alive_token++;
@@ -258,6 +275,20 @@ void safety_tick()
         bool fresh_b = asm_read_sensors(IMU_B_CS_PIN, ax_b, ay_b, az_b, gx_b, gy_b, gz_b);
         { uint32_t dt = millis() - t_spi; if (dt > s_spi_ms_max) s_spi_ms_max = dt; }
         s_hang_cp = 0U;
+
+        // Common-mode fault: identical pre-remap readings from two physically separate sensors
+        // indicates a stuck MISO line or both CS pins wired to the same device.
+        // Checked before axis remap so raw SPI values are compared directly.
+        // s_cm_cnt is function-scope so the periodic eval block can read it for the clear path.
+        if (fresh_a && fresh_b) {
+            if (ax_a == ax_b && ay_a == ay_b && az_a == az_b &&
+                gx_a == gx_b && gy_a == gy_b && gz_a == gz_b) {
+                if (s_cm_cnt < 255U) s_cm_cnt++;
+                if (s_cm_cnt >= 3U) fault_set(FAULT_INTEGRITY);
+            } else {
+                s_cm_cnt = 0U;
+            }
+        }
 
         // IMU-B axis remap: board reverse side + 90-degree rotation relative to IMU-A.
         // Derived from live gravity vectors: B.x=A.y, B.y=A.x, B.z=-A.z.
@@ -474,6 +505,22 @@ void safety_tick()
                 snprintf(sb, sizeof(sb), "[STACK] deep=%lu bytes -- FAULT_INTEGRITY",
                          (unsigned long)stack_used_bytes());
                 Serial.println(sb);
+            }
+        }
+
+        // FAULT_INTEGRITY clear path: both triggers (common-mode and stack) must be inactive
+        // for clean_streak_needed consecutive eval periods before the fault is cleared.
+        {
+            static uint8_t s_integrity_clean = 0U;
+            if (fault_mask_get() & FAULT_INTEGRITY) {
+                if (s_cm_cnt == 0U && stack_used_bytes() <= STACK_WARN_BYTES) {
+                    if (++s_integrity_clean >= g_safety_thresholds.clean_streak_needed)
+                        fault_clr(FAULT_INTEGRITY);
+                } else {
+                    s_integrity_clean = 0U;
+                }
+            } else {
+                s_integrity_clean = 0U;
             }
         }
 
@@ -707,6 +754,20 @@ void safety_init()
     // INPUT_PULLDOWN: unwired SAFE_MON_PIN_HW reads LOW (not floating HIGH),
     // preventing a false FAULT_INTEGRITY at startup before the first sample.
     pinMode(SAFE_MON_PIN_HW, INPUT_PULLDOWN);
+
+    // CR-4 startup: exercise both output states to verify independent monitoring path.
+    // Catches shared-net faults where driver and readback are stuck at the same voltage.
+    {
+        digitalWrite(SAFE_OUT_PIN, LOW);
+        delayMicroseconds(50U);
+        bool low_ok = (digitalRead(SAFE_MON_PIN_HW) == LOW);
+        digitalWrite(SAFE_OUT_PIN, HIGH);
+        delayMicroseconds(50U);
+        bool high_ok = (digitalRead(SAFE_MON_PIN_HW) == HIGH);
+        digitalWrite(SAFE_OUT_PIN, LOW);
+        delayMicroseconds(50U);
+        if (!low_ok || !high_ok) fault_set(FAULT_OUTPUT);
+    }
 
     pinMode(IMU_A_CS_PIN,   OUTPUT); digitalWrite(IMU_A_CS_PIN, HIGH);
     pinMode(IMU_B_CS_PIN,   OUTPUT); digitalWrite(IMU_B_CS_PIN, HIGH);

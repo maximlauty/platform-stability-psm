@@ -125,7 +125,8 @@ uint16_t compute_safety_crc()
     crc = crc16_ccitt(crc, (uint8_t)(s_fault_mask        >>  8));
     crc = crc16_ccitt(crc, (uint8_t)(s_fault_mask_inv));
     crc = crc16_ccitt(crc, (uint8_t)(s_fault_mask_inv    >>  8));
-    // MA-1: key threshold bytes
+    // MA-1: key threshold bytes (36 B total: spike counts 8B + buf state 8B + fault shadow 4B
+    //        + omega_stable_dps 4B + spike_accel_g 4B + spread_max_deg 4B + anchor_max_deg 4B)
     uint32_t tmp;
     memcpy(&tmp, (const void*)&g_safety_thresholds.omega_stable_dps, 4U);
     crc = crc16_ccitt(crc, (uint8_t)(tmp));
@@ -133,6 +134,16 @@ uint16_t compute_safety_crc()
     crc = crc16_ccitt(crc, (uint8_t)(tmp >> 16));
     crc = crc16_ccitt(crc, (uint8_t)(tmp >> 24));
     memcpy(&tmp, (const void*)&g_safety_thresholds.spike_accel_g, 4U);
+    crc = crc16_ccitt(crc, (uint8_t)(tmp));
+    crc = crc16_ccitt(crc, (uint8_t)(tmp >>  8));
+    crc = crc16_ccitt(crc, (uint8_t)(tmp >> 16));
+    crc = crc16_ccitt(crc, (uint8_t)(tmp >> 24));
+    memcpy(&tmp, (const void*)&g_safety_thresholds.spread_max_deg, 4U);
+    crc = crc16_ccitt(crc, (uint8_t)(tmp));
+    crc = crc16_ccitt(crc, (uint8_t)(tmp >>  8));
+    crc = crc16_ccitt(crc, (uint8_t)(tmp >> 16));
+    crc = crc16_ccitt(crc, (uint8_t)(tmp >> 24));
+    memcpy(&tmp, (const void*)&g_safety_thresholds.anchor_max_deg, 4U);
     crc = crc16_ccitt(crc, (uint8_t)(tmp));
     crc = crc16_ccitt(crc, (uint8_t)(tmp >>  8));
     crc = crc16_ccitt(crc, (uint8_t)(tmp >> 16));

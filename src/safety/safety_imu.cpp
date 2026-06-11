@@ -299,18 +299,16 @@ bool asm_fsm_read_stable(uint8_t cs)
     return (st & 0x01U) != 0U;
 }
 
-static int16_t s_frozen_pgx[2] = {32767, 32767};
-static int16_t s_frozen_pgy[2] = {32767, 32767};
-static int16_t s_frozen_pgz[2] = {32767, 32767};
-static uint8_t s_frozen_cnt[2] = {0U, 0U};
+// CRC-8 over all 12 burst bytes; compared per-channel to detect frozen SPI frames.
+// Initialized to 0xAA (not 0x00/0xFF) so first real read always differs from init value.
+static uint8_t s_frame_crc[2]            = {0xAAU, 0xAAU};
+static uint8_t s_frame_crc_frozen_cnt[2] = {0U, 0U};
 
 void asm_frozen_burst_reset(uint8_t cs)
 {
     uint8_t idx = (cs == IMU_A_CS_PIN) ? 0U : 1U;
-    s_frozen_pgx[idx] = 32767;
-    s_frozen_pgy[idx] = 32767;
-    s_frozen_pgz[idx] = 32767;
-    s_frozen_cnt[idx] = 0U;
+    s_frame_crc[idx]            = 0xAAU;
+    s_frame_crc_frozen_cnt[idx] = 0U;
 }
 
 bool asm_read_sensors(uint8_t cs,
@@ -328,6 +326,25 @@ bool asm_read_sensors(uint8_t cs,
     uint8_t buf[12];
     asm_burst_read(cs, ASM_REG_OUTX_L_G, buf, 12);
 
+    // Per-burst frame integrity via double-read.
+    // With BDU=1, output registers are released after the 12-byte burst; next sensor
+    // sample arrives ~1.2 ms later at 833 Hz. STATUS_REG read immediately after burst:
+    //   0x00 → registers stable, no new data → second burst must match byte-for-byte
+    //   0x03 → ODR tick coincided (~4% rate, ~50 µs window / 1200 µs period) → accept buf
+    //   0xFF → SPI dead → reject
+    // Mismatch on the byte-compare means a MISO bit-flip corrupted one of the two frames.
+    {
+        uint8_t post = asm_reg_read(cs, ASM_REG_STATUS_REG);
+        if (post == 0xFFU) return false;
+        if ((post & 0x03U) == 0x00U) {
+            uint8_t buf2[12];
+            asm_burst_read(cs, ASM_REG_OUTX_L_G, buf2, 12);
+            for (uint8_t i = 0U; i < 12U; ++i) {
+                if (buf[i] != buf2[i]) return false;
+            }
+        }
+    }
+
     int16_t gx_r = (int16_t)((uint16_t)buf[1]  << 8 | buf[0]);
     int16_t gy_r = (int16_t)((uint16_t)buf[3]  << 8 | buf[2]);
     int16_t gz_r = (int16_t)((uint16_t)buf[5]  << 8 | buf[4]);
@@ -337,15 +354,14 @@ bool asm_read_sensors(uint8_t cs,
 
     {
         uint8_t idx = (cs == IMU_A_CS_PIN) ? 0U : 1U;
-        if (gx_r == s_frozen_pgx[idx] && gy_r == s_frozen_pgy[idx] && gz_r == s_frozen_pgz[idx]) {
-            if (s_frozen_cnt[idx] < 255U) s_frozen_cnt[idx]++;
-            if (s_frozen_cnt[idx] >= FROZEN_BURST_TICKS) return false;
+        uint8_t fc = crc8(buf, 12U);
+        if (fc == s_frame_crc[idx]) {
+            if (s_frame_crc_frozen_cnt[idx] < 255U) s_frame_crc_frozen_cnt[idx]++;
+            if (s_frame_crc_frozen_cnt[idx] >= FROZEN_BURST_TICKS) return false;
         } else {
-            s_frozen_cnt[idx] = 0U;
-            s_frozen_pgx[idx] = gx_r;
-            s_frozen_pgy[idx] = gy_r;
-            s_frozen_pgz[idx] = gz_r;
+            s_frame_crc_frozen_cnt[idx] = 0U;
         }
+        s_frame_crc[idx] = fc;
     }
 
     ax_g  = (float)ax_r * ASM_ACCEL_SENS_G;

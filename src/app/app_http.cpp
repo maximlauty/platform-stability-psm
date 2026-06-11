@@ -434,7 +434,7 @@ void http_handle(EthernetClient &client)
               "suppresses SAFE_OUT_PIN. Never use during deployment.</span></p>",
               CONFIG_AUTH_TOKEN);
           W(ibtn); }
-        { char lbtn[256];
+        { char lbtn[300];
           snprintf(lbtn, sizeof(lbtn),
               "<p style='margin:4px 0'>"
               "<button id='lightbtn' data-auth='%s' "
@@ -519,11 +519,17 @@ void app_tick()
         if (s_web_client) s_web_client_accept_ms = millis();
     } else if (!s_web_client.available()) {
         if (millis() - s_web_client_accept_ms > WEB_CLIENT_TIMEOUT_MS)
-            s_web_client.stop();
+            s_web_client.close();
     }
     if (s_web_client && s_web_client.available()) {
         http_handle(s_web_client);
-        s_web_client.stop();
+        // close(), not stop(): stop() busy-waits up to connTimeout_ (default
+        // 1000 ms) for the peer's FIN-ACK via yield()/Ethernet.loop(), which
+        // blocks loop() and trips CR-5 (FAULT_FROZEN, ~31 ms) whenever the
+        // peer's close handshake is slow. close() sends our FIN and returns
+        // immediately; lwIP completes the handshake in the background via the
+        // Ethernet.loop() calls already made every app_tick().
+        s_web_client.close();
     }
     Ethernet.loop();
 

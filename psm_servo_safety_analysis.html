@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PSM Servo Output — Safety Analysis | IEC 61508 / MIL-STD-882E</title>
+<style>
+:root{
+  --bg:#111;--surf:#1a1a1a;--surf2:#222;--surf3:#2a2a2a;
+  --bdr:#333;--bdr2:#444;
+  --txt:#c8d0dc;--dim:#667788;--muted:#445566;--bright:#e8ecf4;
+  --acc:#44aaff;--acc-dim:#1a3a55;
+  --red:#cc3333;--red-bg:#2a0808;--red-bdr:#661111;
+  --ora:#dd6622;--ora-bg:#2a1000;--ora-bdr:#664422;
+  --amb:#ddaa00;--amb-bg:#2a1e00;--amb-bdr:#665500;
+  --grn:#33aa55;--grn-bg:#0a2010;--grn-bdr:#226633;
+  --font:'Courier New',Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:var(--font);font-size:13px;line-height:1.55}
+a{color:var(--acc);text-decoration:none}
+header{background:#0a0a0a;border-bottom:1px solid var(--bdr2);padding:18px 28px;display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px}
+.hdr-left h1{color:var(--acc);font-size:1.2em;margin-bottom:4px}
+.hdr-left p{color:var(--dim);font-size:0.82em}
+.badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.badge{padding:2px 8px;border-radius:2px;font-size:0.75em;border:1px solid}
+.badge-asil{background:#2a0808;color:#ff8888;border-color:#661111}
+.badge-sil{background:#0a1830;color:#88aaff;border-color:#336699}
+.badge-mil{background:#1e1600;color:#ddaa55;border-color:#664422}
+.hdr-right{text-align:right;color:var(--dim);font-size:0.8em;line-height:1.8}
+#layout{display:flex;min-height:calc(100vh - 60px)}
+#snav{position:fixed;right:12px;top:100px;width:130px;background:#0e0e0e;border:1px solid var(--bdr);border-radius:4px;padding:10px 0;z-index:100;font-size:0.78em}
+#snav a{display:block;padding:4px 12px;color:var(--dim);border-left:2px solid transparent;transition:all .15s}
+#snav a:hover,#snav a.active{color:var(--acc);border-left-color:var(--acc);background:#141414}
+main{flex:1;padding:24px 28px;max-width:1180px;margin-right:155px}
+section{margin-bottom:36px;padding-bottom:24px;border-bottom:1px solid var(--bdr)}
+h2{color:var(--acc);font-size:1em;margin-bottom:14px;padding-bottom:6px;border-bottom:1px solid var(--bdr2)}
+h3{color:#8ccfff;font-size:0.9em;margin:14px 0 8px}
+p{margin-bottom:8px;color:var(--txt)}
+.callout{padding:10px 14px;border-radius:3px;margin:12px 0;font-size:0.88em;line-height:1.6}
+.callout-warn{background:var(--amb-bg);border-left:3px solid var(--amb)}
+.callout-danger{background:var(--red-bg);border-left:3px solid var(--red)}
+.callout-info{background:var(--acc-dim);border-left:3px solid var(--acc)}
+.callout strong{color:var(--bright)}
+table{border-collapse:collapse;width:100%;margin-bottom:12px;font-size:0.82em}
+th{background:var(--surf2);color:#8ccfff;padding:6px 9px;border:1px solid var(--bdr2);text-align:left;font-weight:normal}
+td{padding:5px 9px;border:1px solid var(--bdr);vertical-align:top}
+tr:hover td{background:#161616}
+.sev-cat{font-size:0.75em;padding:1px 5px;border-radius:2px;white-space:nowrap}
+.sev-I{background:#3a0808;color:#ff7777;border:1px solid #661111}
+.sev-II{background:#2a1400;color:#ffaa55;border:1px solid #664422}
+.sev-III{background:#252200;color:#ddcc44;border:1px solid #555522}
+.sev-IV{background:#0a1e0e;color:#55cc77;border:1px solid #226633}
+.tag{padding:1px 7px;border-radius:2px;font-size:0.75em;font-weight:bold;margin-right:4px}
+.tag-must{background:#2a0a0a;color:#ff6666;border:1px solid #660000}
+.tag-should{background:#1a1800;color:#ddcc44;border:1px solid #554400}
+.tag-consider{background:#0a1a10;color:#55cc77;border:1px solid #225533}
+.est{color:var(--amb);font-size:0.8em}
+.risk-H{background:#2a0808;color:#ff7777}
+.risk-S{background:#251000;color:#ff9944}
+.risk-M{background:#1e1800;color:#ccbb33}
+.risk-L{background:#0a1e0e;color:#44bb66}
+.risk-E{background:#141414;color:#446655}
+#rmatrix{width:auto;margin:0 auto}
+#rmatrix th,#rmatrix td{text-align:center;padding:8px 12px;min-width:90px;cursor:pointer;border:1px solid var(--bdr2)}
+#rmatrix .ax-lbl{background:#0a0a0a;color:var(--dim);cursor:default;font-size:0.78em}
+#rmatrix .ax-lbl:hover{background:#0a0a0a}
+.mmarker{display:inline-block;background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.15);border-radius:2px;padding:1px 4px;margin:1px;font-size:0.78em;white-space:nowrap}
+#matrix-tip{position:fixed;display:none;background:#0e1520;border:1px solid var(--acc);border-radius:4px;padding:10px 14px;font-size:0.8em;max-width:280px;z-index:999;pointer-events:none;color:var(--txt);line-height:1.6}
+#matrix-tip strong{color:var(--acc)}
+.fta-wrap{overflow-x:auto;background:var(--surf);border:1px solid var(--bdr);border-radius:4px;padding:8px}
+.fta-wrap svg{min-width:700px}
+.sil-tbl td:nth-child(3){color:var(--red)}
+.sil-tbl td:nth-child(4){color:var(--amb)}
+.gap{color:var(--red)}
+.ok{color:var(--grn)}
+.inline-code{background:var(--surf2);border:1px solid var(--bdr);padding:1px 5px;border-radius:2px;font-size:0.85em;color:#aaddff}
+footer{border-top:1px solid var(--bdr);padding:14px 28px;color:var(--muted);font-size:0.78em;line-height:1.7;margin-top:20px}
+</style>
+</head>
+<body>
+<header>
+  <div class="hdr-left">
+    <h1>PSM Servo Output Subsystem &mdash; Safety Analysis</h1>
+    <p>Platform Stability Monitor v2 &middot; Teensy 4.1 + 2&times; ASM330LHB &middot; SAFE_OUT_PIN &rarr; Transistor &rarr; Servo PWM</p>
+    <div class="badges">
+      <span class="badge badge-asil">ASIL-D upstream</span>
+      <span class="badge badge-sil">IEC 61508</span>
+      <span class="badge badge-mil">MIL-STD-882E</span>
+      <span class="badge badge-sil">IEC 61025 FTA</span>
+    </div>
+  </div>
+  <div class="hdr-right">
+    <div>Document date: 2026-06-08</div>
+    <div>Revision: 1.0</div>
+    <div>Scope: output channel only</div>
+    <div>Upstream PSM: SIL&nbsp;3&nbsp;/&nbsp;ASIL&nbsp;D</div>
+  </div>
+</header>
+
+<div id="layout">
+<nav id="snav">
+  <a href="#s1">1. Summary</a>
+  <a href="#s2">2. System</a>
+  <a href="#s3">3. Hazards</a>
+  <a href="#s4">4. FTA</a>
+  <a href="#s5">5. FMEA</a>
+  <a href="#s6">6. Risk Matrix</a>
+  <a href="#s7">7. Dual Signal</a>
+  <a href="#s8">8. Recommendations</a>
+  <a href="#s9">9. Appendix</a>
+</nav>
+<main>
+
+<!-- ═══════════════════════════════════════════════════════ SECTION 1 -->
+<section id="s1">
+<h2>1. Executive Summary</h2>
+<div class="callout callout-danger">
+<strong>Overall SIL rating of this safety function: SIL&nbsp;1</strong><br>
+The PSM upstream detection chain (dual ASM330LHB + Mahony AHRS + FSM) achieves SIL&nbsp;3&nbsp;/&nbsp;ASIL&nbsp;D. However, the output channel &mdash; transistor gate stage, servo PWM generation, and servo-signal relay &mdash; contains undetected single-point failures that limit the entire safety function to <strong>SIL&nbsp;1</strong> per IEC&nbsp;61508-1:2010 &sect;10 (weakest-link rule). Two SIL levels are lost in the output chain.
+</div>
+<div class="callout callout-warn">
+<strong>Verdict on dual synced servo signals:</strong> Two PWM outputs sourced from the same MCU timer peripheral, same power supply, and same silicon die are a <strong>common-cause failure (CCF) group</strong>, not an independent redundant channel. Under IEC&nbsp;61508-6 Annex&nbsp;D (&beta;-factor model), &beta;&nbsp;&ge;&nbsp;0.20 for same-chip digital outputs. Duplicating the signal improves signal-path robustness marginally but does not improve the dangerous failure rate and introduces a stuck-on race condition as an additional failure mode.
+</div>
+<p>Three findings require immediate action before deployment: (1) transistor short circuit has no detection path, (2) relay contact weld is entirely undetected, (3) no brownout detection is configured on the iMXRT1062 &mdash; MCU behaviour during slow voltage droop is undefined.</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ SECTION 2 -->
+<section id="s2">
+<h2>2. System Description</h2>
+<h3>2.1 Signal Flow</h3>
+<div class="fta-wrap" style="padding:16px">
+<svg viewBox="0 0 760 190" width="100%" style="max-width:760px;display:block;margin:0 auto">
+  <defs>
+    <marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <polygon points="0 0, 7 3.5, 0 7" fill="#44aaff"/>
+    </marker>
+  </defs>
+  <!-- PSM box -->
+  <rect x="10" y="70" width="130" height="50" rx="3" fill="#0d2030" stroke="#44aaff" stroke-width="1.5"/>
+  <text x="75" y="91" text-anchor="middle" fill="#44aaff" font-family="Courier New,monospace" font-size="10" font-weight="bold">PSM</text>
+  <text x="75" y="104" text-anchor="middle" fill="#88bbdd" font-family="Courier New,monospace" font-size="8.5">Teensy 4.1</text>
+  <text x="75" y="115" text-anchor="middle" fill="#88bbdd" font-family="Courier New,monospace" font-size="8">SAFE_OUT_PIN (pin 2)</text>
+  <!-- arrow PSM -> transistor -->
+  <line x1="140" y1="95" x2="195" y2="95" stroke="#44aaff" stroke-width="1.2" marker-end="url(#arr)"/>
+  <text x="168" y="89" text-anchor="middle" fill="#667788" font-family="Courier New,monospace" font-size="8">3.3 V logic</text>
+  <!-- Transistor box -->
+  <rect x="198" y="70" width="110" height="50" rx="3" fill="#0d1a10" stroke="#33aa55" stroke-width="1.5"/>
+  <text x="253" y="91" text-anchor="middle" fill="#33aa55" font-family="Courier New,monospace" font-size="10" font-weight="bold">Transistor</text>
+  <text x="253" y="104" text-anchor="middle" fill="#88bbcc" font-family="Courier New,monospace" font-size="8.5">NPN / N-ch MOSFET</text>
+  <text x="253" y="115" text-anchor="middle" fill="#88bbcc" font-family="Courier New,monospace" font-size="8">R_b on base/gate</text>
+  <!-- fan-out lines -->
+  <line x1="308" y1="85" x2="360" y2="65" stroke="#44aaff" stroke-width="1.2" marker-end="url(#arr)"/>
+  <line x1="308" y1="105" x2="360" y2="125" stroke="#44aaff" stroke-width="1.2" marker-end="url(#arr)"/>
+  <text x="340" y="93" text-anchor="middle" fill="#667788" font-family="Courier New,monospace" font-size="7.5">Servo signal A</text>
+  <text x="340" y="120" text-anchor="middle" fill="#667788" font-family="Courier New,monospace" font-size="7.5">Servo signal B</text>
+  <!-- Servo box -->
+  <rect x="363" y="40" width="115" height="48" rx="3" fill="#1a1020" stroke="#aa66ff" stroke-width="1.5"/>
+  <text x="420" y="61" text-anchor="middle" fill="#cc88ff" font-family="Courier New,monospace" font-size="10" font-weight="bold">Servo</text>
+  <text x="420" y="74" text-anchor="middle" fill="#aa88cc" font-family="Courier New,monospace" font-size="8.5">Physical actuator</text>
+  <text x="420" y="84" text-anchor="middle" fill="#aa88cc" font-family="Courier New,monospace" font-size="8">50 Hz PWM, 1&ndash;2 ms</text>
+  <!-- Relay box -->
+  <rect x="363" y="100" width="115" height="48" rx="3" fill="#1a1500" stroke="#ddaa00" stroke-width="1.5"/>
+  <text x="420" y="121" text-anchor="middle" fill="#ddaa44" font-family="Courier New,monospace" font-size="10" font-weight="bold">Relay</text>
+  <text x="420" y="134" text-anchor="middle" fill="#bbaa66" font-family="Courier New,monospace" font-size="8.5">Servo-signal controlled</text>
+  <text x="420" y="144" text-anchor="middle" fill="#bbaa66" font-family="Courier New,monospace" font-size="8">NC or NO contacts</text>
+  <!-- arrow Relay -> Load -->
+  <line x1="478" y1="124" x2="540" y2="124" stroke="#ddaa00" stroke-width="1.2" marker-end="url(#arr)"/>
+  <!-- Load box -->
+  <rect x="543" y="100" width="90" height="48" rx="3" fill="#201800" stroke="#886633" stroke-width="1.2"/>
+  <text x="588" y="121" text-anchor="middle" fill="#aa8844" font-family="Courier New,monospace" font-size="10" font-weight="bold">Load</text>
+  <text x="588" y="134" text-anchor="middle" fill="#887755" font-family="Courier New,monospace" font-size="8.5">(user-defined)</text>
+  <text x="588" y="144" text-anchor="middle" fill="#887755" font-family="Courier New,monospace" font-size="8">switched by relay</text>
+  <!-- Readback label -->
+  <line x1="253" y1="120" x2="253" y2="158" stroke="#445566" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="75" y1="158" x2="253" y2="158" stroke="#445566" stroke-width="1" stroke-dasharray="4,3"/>
+  <line x1="75" y1="158" x2="75" y2="120" stroke="#445566" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+  <text x="164" y="171" text-anchor="middle" fill="#445566" font-family="Courier New,monospace" font-size="8">No readback path for transistor state</text>
+  <!-- SAFE_MON label -->
+  <text x="75" y="183" text-anchor="middle" fill="#226633" font-family="Courier New,monospace" font-size="8">SAFE_MON (pin 3) reads SAFE_OUT_PIN only, not transistor collector</text>
+</svg>
+</div>
+<h3>2.2 Operating Parameters</h3>
+<table>
+<tr><th>Parameter</th><th>Value</th><th>Note</th></tr>
+<tr><td>Servo PWM frequency</td><td>50 Hz</td><td>Standard RC servo protocol</td></tr>
+<tr><td>Pulse width (active)</td><td>1.0&ndash;2.0 ms</td><td>Position command range</td></tr>
+<tr><td>Pulse width (gated off)</td><td>0 ms (no pulse)</td><td>Transistor off = no PWM output</td></tr>
+<tr><td>SAFE_OUT_PIN drive</td><td>3.3 V / &le;12 mA</td><td>Teensy 4.1 GPIO; HIGH = stable, LOW = unsafe</td></tr>
+<tr><td>PSM stability eval period</td><td>200 ms</td><td>set_safe_output() in safety_monitor.cpp:201</td></tr>
+<tr><td>SAFE_MON readback</td><td>Pin 3, INPUT_PULLDOWN</td><td>Reads SAFE_OUT_PIN net only &mdash; NOT transistor collector</td></tr>
+<tr><td>Transistor collector readback</td><td><strong>Not implemented</strong></td><td><span class="tag tag-must">GAP</span> No detection of transistor short-circuit</td></tr>
+</table>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ SECTION 3 -->
+<section id="s3">
+<h2>3. Hazard Identification</h2>
+<table>
+<tr><th>ID</th><th>Description</th><th>Failure Mode</th><th>Direction</th><th>Severity</th><th>Notes</th></tr>
+<tr id="hz-H-01"><td><strong>H-01</strong></td><td>PSM common-mode sensor failure &mdash; both IMUs report stable when platform is not</td><td>SAFE_OUT_PIN driven HIGH while unstable; full downstream chain activates</td><td>Dangerous</td><td><span class="sev-cat sev-I">I Catastrophic</span></td><td>PSM residual mitigations: hw_gate AND, dual-IMU divergence, FSM 3-shot hold. Residual PFH &asymp;10&sup2;&sup5;/hr <span class="est">[EST]</span></td></tr>
+<tr id="hz-H-02"><td><strong>H-02</strong></td><td>Transistor base-emitter or gate-source short circuit</td><td>Device conducts regardless of SAFE_OUT_PIN; servo and relay continuously powered</td><td>Dangerous</td><td><span class="sev-cat sev-I">I Catastrophic</span></td><td>No detection from MCU. External collector-voltage readback would detect this (Rec&nbsp;2)</td></tr>
+<tr id="hz-H-03"><td><strong>H-03</strong></td><td>MCU PWM timer peripheral freezes with output HIGH</td><td>Servo receives constant pulse; relay remains energised independent of SAFE_OUT_PIN</td><td>Dangerous</td><td><span class="sev-cat sev-II">II Critical</span></td><td>PSM loop-frozen watchdog (CR-5, 31&nbsp;ms) cuts transistor gate. 31&nbsp;ms exposure window.</td></tr>
+<tr id="hz-H-04"><td><strong>H-04</strong></td><td>Servo signal wire shorts to V+ rail (external wiring fault)</td><td>Servo/relay driven continuously independent of control logic</td><td>Dangerous</td><td><span class="sev-cat sev-I">I Catastrophic</span></td><td>Not detectable from MCU. Wiring inspection and sleeving required.</td></tr>
+<tr id="hz-H-05"><td><strong>H-05</strong></td><td>Transistor open-circuit failure</td><td>Transistor never conducts; servo and relay never actuate</td><td>Safe (mission loss)</td><td><span class="sev-cat sev-IV">IV Negligible</span></td><td>PSM FAULT_OUTPUT detects if servo signal readback is wired through collector path</td></tr>
+<tr id="hz-H-06"><td><strong>H-06</strong></td><td>MCU PWM timer stops (output stuck LOW)</td><td>Servo/relay de-energised regardless of stability state</td><td>Safe (mission loss)</td><td><span class="sev-cat sev-IV">IV Negligible</span></td><td>Servo defaults to mechanical neutral or last held position depending on type</td></tr>
+<tr id="hz-H-07"><td><strong>H-07</strong></td><td>Both servo signals fail to same stuck-on state (common cause)</td><td>Correlated failure of both channels simultaneously; no independent de-energise path</td><td>Dangerous if stuck-HIGH</td><td><span class="sev-cat sev-II">II Critical</span></td><td>Root cause: same MCU, same timer, same power rail. Core CCF finding.</td></tr>
+<tr id="hz-H-08"><td><strong>H-08</strong></td><td>EMI noise coupling on transistor control line</td><td>PWM pulse width distorted by noise; servo jitter; relay may toggle spuriously</td><td>Dangerous (marginal)</td><td><span class="sev-cat sev-III">III Marginal</span></td><td>100&nbsp;&Omega; base resistor + 100&nbsp;nF gate decoupling mitigate. Risk elevated near motors.</td></tr>
+<tr id="hz-H-09"><td><strong>H-09</strong></td><td>Transistor sub-threshold leakage when SAFE_OUT_PIN is LOW</td><td>Partial servo torque maintained; relay may not fully release</td><td>Dangerous (marginal)</td><td><span class="sev-cat sev-III">III Marginal</span></td><td>MOSFET preferred over BJT (lower leakage). R_pulldown on servo line to GND mitigates.</td></tr>
+<tr id="hz-H-10"><td><strong>H-10</strong></td><td>Power supply brownout &mdash; slow voltage droop before MCU reset</td><td>MCU executes erratically during droop; SAFE_OUT_PIN state undefined</td><td>Dangerous</td><td><span class="sev-cat sev-II">II Critical</span></td><td>No BOD configured on iMXRT1062 (PSM known gap). External BOD IC or DCDC_REG3 threshold required.</td></tr>
+<tr id="hz-H-11"><td><strong>H-11</strong></td><td>GPIO floats during WDT reset / MCU reboot sequence</td><td>SAFE_OUT_PIN reverts to high-Z input for ~2&ndash;5&nbsp;s; transistor base undefined</td><td>Dangerous (marginal)</td><td><span class="sev-cat sev-III">III Marginal</span></td><td>External 10&nbsp;k&Omega; pull-down on SAFE_OUT_PIN net (separate from SAFE_MON) eliminates.</td></tr>
+<tr id="hz-H-12"><td><strong>H-12</strong></td><td>No output diversity &mdash; single transistor is sole hardware cut-off</td><td>Transistor failure (H-02) is single point of failure with no independent isolation path</td><td>Dangerous</td><td><span class="sev-cat sev-II">II Critical</span></td><td>Architectural gap. Second independent NC relay or SSR in series with servo lines required for SIL&nbsp;2.</td></tr>
+</table>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ SECTION 4 -->
+<section id="s4">
+<h2>4. Fault Tree Analysis (IEC 61025)</h2>
+
+<div style="display:flex;gap:16px;margin-bottom:12px;font-size:0.8em;flex-wrap:wrap">
+  <span><svg width="22" height="14" style="vertical-align:middle"><rect x="1" y="1" width="20" height="12" rx="2" fill="#2a0808" stroke="#cc3333" stroke-width="1.2"/></svg> Top / Intermediate Event</span>
+  <span><svg width="22" height="16" style="vertical-align:middle"><path d="M 11,1 Q 0,4 1,9 Q 5,15 11,15 Q 17,15 21,9 Q 22,4 11,1 Z" fill="#0d2010" stroke="#33aa55" stroke-width="1.2"/></svg> OR Gate</span>
+  <span><svg width="22" height="16" style="vertical-align:middle"><path d="M 1,5 L 21,5 Q 21,15 11,15 Q 1,15 1,5 Z" fill="#0a1830" stroke="#3366cc" stroke-width="1.2"/></svg> AND Gate</span>
+  <span><svg width="22" height="22" style="vertical-align:middle"><circle cx="11" cy="11" r="9" fill="#1a1a2a" stroke="#667799" stroke-width="1.2"/></svg> Basic Event</span>
+  <span><svg width="22" height="22" style="vertical-align:middle"><polygon points="11,2 20,11 11,20 2,11" fill="#1e1600" stroke="#886633" stroke-width="1.2"/></svg> Undeveloped Event</span>
+</div>
+
+<div class="fta-wrap">
+<svg viewBox="0 0 1400 540" width="100%" style="min-width:900px">
+<!-- ── connector colour ── -->
+<g stroke="#334455" stroke-width="1.2" fill="none">
+  <!-- Sub-tree A verticals (parent→gate) -->
+  <line x1="340" y1="77" x2="340" y2="128"/>
+  <line x1="200" y1="250" x2="200" y2="298"/>
+  <line x1="510" y1="250" x2="510" y2="298"/>
+  <!-- Sub-tree A: G1 fan-out bus -->
+  <line x1="340" y1="162" x2="340" y2="175"/>
+  <line x1="200" y1="175" x2="510" y2="175"/>
+  <line x1="200" y1="175" x2="200" y2="210"/>
+  <line x1="510" y1="175" x2="510" y2="210"/>
+  <!-- Sub-tree A: G2 fan-out bus -->
+  <line x1="200" y1="332" x2="200" y2="348"/>
+  <line x1="130" y1="348" x2="270" y2="348"/>
+  <line x1="130" y1="348" x2="130" y2="408"/>
+  <line x1="270" y1="348" x2="270" y2="408"/>
+  <!-- Sub-tree A: G3 fan-out bus -->
+  <line x1="510" y1="332" x2="510" y2="352"/>
+  <line x1="395" y1="352" x2="690" y2="352"/>
+  <line x1="395" y1="352" x2="395" y2="408"/>
+  <line x1="495" y1="352" x2="495" y2="408"/>
+  <line x1="595" y1="352" x2="595" y2="408"/>
+  <line x1="690" y1="352" x2="690" y2="390"/>
+  <!-- Sub-tree B verticals -->
+  <line x1="1060" y1="77" x2="1060" y2="128"/>
+  <line x1="900" y1="250" x2="900" y2="298"/>
+  <line x1="1210" y1="250" x2="1210" y2="298"/>
+  <!-- Sub-tree B: G1 fan-out bus -->
+  <line x1="1060" y1="162" x2="1060" y2="175"/>
+  <line x1="900" y1="175" x2="1210" y2="175"/>
+  <line x1="900" y1="175" x2="900" y2="210"/>
+  <line x1="1210" y1="175" x2="1210" y2="210"/>
+  <!-- Sub-tree B: G2 fan-out bus -->
+  <line x1="900" y1="332" x2="900" y2="350"/>
+  <line x1="835" y1="350" x2="970" y2="350"/>
+  <line x1="835" y1="350" x2="835" y2="408"/>
+  <line x1="970" y1="350" x2="970" y2="408"/>
+  <!-- Sub-tree B: G3 fan-out bus -->
+  <line x1="1210" y1="332" x2="1210" y2="352"/>
+  <line x1="1110" y1="352" x2="1355" y2="352"/>
+  <line x1="1110" y1="352" x2="1110" y2="408"/>
+  <line x1="1240" y1="352" x2="1240" y2="408"/>
+  <line x1="1355" y1="352" x2="1355" y2="390"/>
+</g>
+
+<!-- Sub-tree separator -->
+<line x1="720" y1="20" x2="720" y2="520" stroke="#2a2a2a" stroke-width="1" stroke-dasharray="6,4"/>
+<text x="720" y="16" text-anchor="middle" fill="#334455" font-family="Courier New,monospace" font-size="9">─────────────────────────────────────────────────────</text>
+
+<!-- ══════════ SUB-TREE A ══════════ -->
+<!-- A-TOP -->
+<rect x="240" y="33" width="200" height="44" rx="3" fill="#2a0808" stroke="#cc3333" stroke-width="1.8"/>
+<text x="340" y="51" text-anchor="middle" fill="#ff8888" font-family="Courier New,monospace" font-size="10" font-weight="bold">DANGEROUS FAILURE</text>
+<text x="340" y="64" text-anchor="middle" fill="#cc9999" font-family="Courier New,monospace" font-size="8.5">Unintended Actuation (PSM Unsafe)</text>
+<text x="340" y="76" text-anchor="middle" fill="#664444" font-family="Courier New,monospace" font-size="7.5">Sub-tree A</text>
+
+<!-- A-G1 OR gate -->
+<path d="M 318,128 Q 340,121 362,128 Q 364,140 340,152 Q 316,140 318,128 Z" fill="#0d2010" stroke="#33aa55" stroke-width="1.5"/>
+<text x="340" y="143" text-anchor="middle" fill="#33aa55" font-family="Courier New,monospace" font-size="9" font-weight="bold">OR</text>
+
+<!-- A-INT1 -->
+<rect x="120" y="210" width="160" height="40" rx="3" fill="#151e2a" stroke="#3a5a80" stroke-width="1.4"/>
+<text x="200" y="226" text-anchor="middle" fill="#88aacc" font-family="Courier New,monospace" font-size="8.5">PSM asserts HIGH</text>
+<text x="200" y="238" text-anchor="middle" fill="#88aacc" font-family="Courier New,monospace" font-size="8.5">while platform unsafe</text>
+
+<!-- A-G2 AND gate -->
+<path d="M 179,298 L 221,298 Q 221,330 200,332 Q 179,330 179,298 Z" fill="#0a1830" stroke="#3366cc" stroke-width="1.5"/>
+<text x="200" y="316" text-anchor="middle" fill="#6699cc" font-family="Courier New,monospace" font-size="9" font-weight="bold">AND</text>
+
+<!-- A-INT2 -->
+<rect x="425" y="210" width="170" height="40" rx="3" fill="#151e2a" stroke="#3a5a80" stroke-width="1.4"/>
+<text x="510" y="226" text-anchor="middle" fill="#88aacc" font-family="Courier New,monospace" font-size="8.5">Transistor conducts</text>
+<text x="510" y="238" text-anchor="middle" fill="#88aacc" font-family="Courier New,monospace" font-size="8.5">uncontrolled</text>
+
+<!-- A-G3 OR gate -->
+<path d="M 488,298 Q 510,291 532,298 Q 534,313 510,326 Q 486,313 488,298 Z" fill="#0d2010" stroke="#33aa55" stroke-width="1.5"/>
+<text x="510" y="315" text-anchor="middle" fill="#33aa55" font-family="Courier New,monospace" font-size="9" font-weight="bold">OR</text>
+
+<!-- A-E1 circle: H-01 -->
+<circle cx="130" cy="435" r="27" fill="#1a1a2a" stroke="#667799" stroke-width="1.3"/>
+<text x="130" y="428" text-anchor="middle" fill="#44aaff" font-family="Courier New,monospace" font-size="7.5" font-weight="bold">H-01</text>
+<text x="130" y="438" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">PSM sensor /</text>
+<text x="130" y="447" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">logic fail</text>
+
+<!-- A-E2 circle: H-02a -->
+<circle cx="270" cy="435" r="27" fill="#1a1a2a" stroke="#667799" stroke-width="1.3"/>
+<text x="270" y="428" text-anchor="middle" fill="#44aaff" font-family="Courier New,monospace" font-size="7.5" font-weight="bold">H-02</text>
+<text x="270" y="438" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">Transistor</text>
+<text x="270" y="447" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">FET/BJT short</text>
+
+<!-- A-E3 circle: H-02b -->
+<circle cx="395" cy="435" r="27" fill="#1a1a2a" stroke="#667799" stroke-width="1.3"/>
+<text x="395" y="428" text-anchor="middle" fill="#44aaff" font-family="Courier New,monospace" font-size="7.5" font-weight="bold">H-02</text>
+<text x="395" y="438" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">Base-emitter /</text>
+<text x="395" y="447" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">gate-src short</text>
+
+<!-- A-E4 circle: H-03 -->
+<circle cx="495" cy="435" r="27" fill="#1a1a2a" stroke="#667799" stroke-width="1.3"/>
+<text x="495" y="428" text-anchor="middle" fill="#44aaff" font-family="Courier New,monospace" font-size="7.5" font-weight="bold">H-03</text>
+<text x="495" y="438" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">PWM stuck</text>
+<text x="495" y="447" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">HIGH (timer)</text>
+
+<!-- A-E5 circle: H-04 -->
+<circle cx="595" cy="435" r="27" fill="#1a1a2a" stroke="#667799" stroke-width="1.3"/>
+<text x="595" y="428" text-anchor="middle" fill="#44aaff" font-family="Courier New,monospace" font-size="7.5" font-weight="bold">H-04</text>
+<text x="595" y="438" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">Wire short</text>
+<text x="595" y="447" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">to V+ rail</text>
+
+<!-- A-E6 diamond: H-10/11 -->
+<polygon points="690,390 715,417 690,444 665,417" fill="#1e1600" stroke="#886633" stroke-width="1.3"/>
+<text x="690" y="411" text-anchor="middle" fill="#ddaa44" font-family="Courier New,monospace" font-size="7.5" font-weight="bold">H-10/11</text>
+<text x="690" y="421" text-anchor="middle" fill="#bbaa77" font-family="Courier New,monospace" font-size="7">Brownout /</text>
+<text x="690" y="431" text-anchor="middle" fill="#bbaa77" font-family="Courier New,monospace" font-size="7">reset glitch</text>
+
+<!-- ══════════ SUB-TREE B ══════════ -->
+<!-- B-TOP -->
+<rect x="960" y="33" width="200" height="44" rx="3" fill="#001820" stroke="#44aaff" stroke-width="1.8"/>
+<text x="1060" y="51" text-anchor="middle" fill="#88ccff" font-family="Courier New,monospace" font-size="10" font-weight="bold">SAFE FAILURE</text>
+<text x="1060" y="64" text-anchor="middle" fill="#6699bb" font-family="Courier New,monospace" font-size="8.5">Loss of Actuation (PSM Stable)</text>
+<text x="1060" y="76" text-anchor="middle" fill="#334455" font-family="Courier New,monospace" font-size="7.5">Sub-tree B &mdash; operational loss only</text>
+
+<!-- B-G1 OR gate -->
+<path d="M 1038,128 Q 1060,121 1082,128 Q 1084,140 1060,152 Q 1036,140 1038,128 Z" fill="#0d2010" stroke="#33aa55" stroke-width="1.5"/>
+<text x="1060" y="143" text-anchor="middle" fill="#33aa55" font-family="Courier New,monospace" font-size="9" font-weight="bold">OR</text>
+
+<!-- B-INT1 -->
+<rect x="818" y="210" width="164" height="40" rx="3" fill="#151e2a" stroke="#3a5a80" stroke-width="1.4"/>
+<text x="900" y="226" text-anchor="middle" fill="#88aacc" font-family="Courier New,monospace" font-size="8.5">SAFE_OUT_PIN LOW</text>
+<text x="900" y="238" text-anchor="middle" fill="#88aacc" font-family="Courier New,monospace" font-size="8.5">despite stable platform</text>
+
+<!-- B-G2 OR gate -->
+<path d="M 878,298 Q 900,291 922,298 Q 924,313 900,326 Q 876,313 878,298 Z" fill="#0d2010" stroke="#33aa55" stroke-width="1.5"/>
+<text x="900" y="315" text-anchor="middle" fill="#33aa55" font-family="Courier New,monospace" font-size="9" font-weight="bold">OR</text>
+
+<!-- B-INT2 -->
+<rect x="1128" y="210" width="164" height="40" rx="3" fill="#151e2a" stroke="#3a5a80" stroke-width="1.4"/>
+<text x="1210" y="226" text-anchor="middle" fill="#88aacc" font-family="Courier New,monospace" font-size="8.5">Transistor fails</text>
+<text x="1210" y="238" text-anchor="middle" fill="#88aacc" font-family="Courier New,monospace" font-size="8.5">to conduct</text>
+
+<!-- B-G3 OR gate -->
+<path d="M 1188,298 Q 1210,291 1232,298 Q 1234,313 1210,326 Q 1186,313 1188,298 Z" fill="#0d2010" stroke="#33aa55" stroke-width="1.5"/>
+<text x="1210" y="315" text-anchor="middle" fill="#33aa55" font-family="Courier New,monospace" font-size="9" font-weight="bold">OR</text>
+
+<!-- B-E1 circle -->
+<circle cx="835" cy="435" r="27" fill="#1a1a2a" stroke="#667799" stroke-width="1.3"/>
+<text x="835" y="428" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7.5">PSM incorrect</text>
+<text x="835" y="438" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">stability</text>
+<text x="835" y="447" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">judgement</text>
+
+<!-- B-E2 circle -->
+<circle cx="970" cy="435" r="27" fill="#1a1a2a" stroke="#667799" stroke-width="1.3"/>
+<text x="970" y="428" text-anchor="middle" fill="#44aaff" font-family="Courier New,monospace" font-size="7">FAULT_OUTPUT</text>
+<text x="970" y="438" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">readback</text>
+<text x="970" y="447" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">mismatch</text>
+
+<!-- B-E3 circle: H-05 -->
+<circle cx="1110" cy="435" r="27" fill="#1a1a2a" stroke="#667799" stroke-width="1.3"/>
+<text x="1110" y="428" text-anchor="middle" fill="#44aaff" font-family="Courier New,monospace" font-size="7.5" font-weight="bold">H-05</text>
+<text x="1110" y="438" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">Transistor</text>
+<text x="1110" y="447" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">open-circuit</text>
+
+<!-- B-E4 circle: H-06 -->
+<circle cx="1240" cy="435" r="27" fill="#1a1a2a" stroke="#667799" stroke-width="1.3"/>
+<text x="1240" y="428" text-anchor="middle" fill="#44aaff" font-family="Courier New,monospace" font-size="7.5" font-weight="bold">H-06</text>
+<text x="1240" y="438" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">Base resistor</text>
+<text x="1240" y="447" text-anchor="middle" fill="#aabbcc" font-family="Courier New,monospace" font-size="7">open-circuit</text>
+
+<!-- B-E5 diamond: H-09 -->
+<polygon points="1355,390 1380,417 1355,444 1330,417" fill="#1e1600" stroke="#886633" stroke-width="1.3"/>
+<text x="1355" y="411" text-anchor="middle" fill="#ddaa44" font-family="Courier New,monospace" font-size="7.5" font-weight="bold">H-09</text>
+<text x="1355" y="421" text-anchor="middle" fill="#bbaa77" font-family="Courier New,monospace" font-size="7">Transistor</text>
+<text x="1355" y="431" text-anchor="middle" fill="#bbaa77" font-family="Courier New,monospace" font-size="7">leakage</text>
+
+<!-- Sub-tree labels -->
+<text x="350" y="500" text-anchor="middle" fill="#662222" font-family="Courier New,monospace" font-size="9">Sub-tree A: Dangerous failure &mdash; actuation while unsafe</text>
+<text x="1060" y="500" text-anchor="middle" fill="#224466" font-family="Courier New,monospace" font-size="9">Sub-tree B: Safe failure &mdash; no actuation when stable (mission loss)</text>
+</svg>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ SECTION 5 -->
+<section id="s5">
+<h2>5. Failure Mode and Effects Analysis (FMEA)</h2>
+<p style="font-size:0.82em;color:var(--dim);margin-bottom:8px">Severity / Occurrence / Detection rated 1&ndash;5 (1=best). RPN&nbsp;=&nbsp;S&times;O&times;D. Values marked <span class="est">[EST]</span>.</p>
+<table>
+<tr><th>ID</th><th>Component</th><th>Failure Mode</th><th>Effect</th><th style="width:28px">S</th><th style="width:28px">O</th><th style="width:28px">D</th><th style="width:36px">RPN</th></tr>
+<tr><td>F-01</td><td>SAFE_OUT_PIN (pin&nbsp;2)</td><td>Stuck HIGH (driver latch-up)</td><td>Transistor on continuously; servo/relay active regardless of stability</td><td>5</td><td>1</td><td>1</td><td>5</td></tr>
+<tr><td>F-02</td><td>SAFE_OUT_PIN</td><td>Stuck LOW</td><td>Transistor never on; no actuation. FAULT_OUTPUT set by PSM readback.</td><td>1</td><td>1</td><td>1</td><td>1</td></tr>
+<tr><td><strong>F-03</strong></td><td>Transistor (BJT/MOSFET)</td><td>Base-emitter / gate-source short</td><td>Conducts continuously; servo+relay always active. No MCU detection.</td><td>5</td><td>2</td><td>5</td><td><strong>50</strong></td></tr>
+<tr><td>F-04</td><td>Transistor</td><td>Open-circuit (C-E or D-S)</td><td>Never conducts; no actuation. Safe failure.</td><td>1</td><td>2</td><td>4</td><td>8</td></tr>
+<tr><td>F-05</td><td>Base/gate resistor</td><td>Open circuit</td><td>No transistor drive; same as F-04.</td><td>1</td><td>1</td><td>5</td><td>5</td></tr>
+<tr><td>F-06</td><td>Servo signal line A</td><td>Shorts to V+ rail</td><td>Servo A driven continuously regardless of control.</td><td>5</td><td>1</td><td>5</td><td>25</td></tr>
+<tr><td>F-07</td><td>Servo signal line A</td><td>Open circuit (wire break)</td><td>Servo A loses signal; falls to neutral or holds last position.</td><td>2</td><td>2</td><td>4</td><td>16</td></tr>
+<tr><td>F-08</td><td>Servo signal line B</td><td>Same as F-06 / F-07 &mdash; common cause</td><td>Both channels fail simultaneously (same MCU, same source).</td><td>5</td><td>2</td><td>5</td><td>50</td></tr>
+<tr><td>F-09</td><td>MCU PWM timer peripheral</td><td>Timer freezes (output stuck)</td><td>PWM frozen at last duty cycle. If HIGH: servo/relay stay active. PSM CR-5 watchdog cuts gate after 31&nbsp;ms.</td><td>4</td><td>2</td><td>4</td><td>32</td></tr>
+<tr><td>F-10</td><td>MCU PWM timer peripheral</td><td>Incorrect pulse width output</td><td>Servo at wrong position; relay state indeterminate. No MCU-level detection.</td><td>3</td><td>2</td><td>5</td><td>30</td></tr>
+<tr><td>F-11</td><td>Servo (physical actuator)</td><td>Mechanically seized</td><td>No movement despite valid command. No feedback to MCU.</td><td>3</td><td>2</td><td>4</td><td>24</td></tr>
+<tr><td><strong>F-12</strong></td><td>Servo-signal relay</td><td>Contacts welded (stuck closed)</td><td>Relay output remains closed regardless of servo signal. Entirely undetected.</td><td>5</td><td>2</td><td>5</td><td><strong>50</strong></td></tr>
+<tr><td>F-13</td><td>Servo-signal relay</td><td>Contacts fail open</td><td>Load never powered. Safe failure. Detectable via load current monitor.</td><td>1</td><td>2</td><td>3</td><td>6</td></tr>
+<tr><td>F-14</td><td>PSM (sensor+algorithm)</td><td>Common-mode sensor failure</td><td>PSM asserts HIGH on unstable platform. PSM residuals: hw_gate, FSM, divergence check.</td><td>5</td><td>2</td><td>2</td><td>20</td></tr>
+<tr><td>F-15</td><td>PSM output integrity</td><td>SAFE_MON stuck HIGH when LOW commanded</td><td>FAULT_INTEGRITY set. PSM cannot verify output. Drives safe direction.</td><td>2</td><td>1</td><td>1</td><td>2</td></tr>
+<tr><td><strong>F-16</strong></td><td>MCU power supply</td><td>Brownout (slow droop)</td><td>Erratic MCU behaviour pre-reset; SAFE_OUT_PIN undefined. No BOD configured.</td><td>4</td><td>2</td><td>5</td><td><strong>40</strong></td></tr>
+<tr><td><strong>F-17</strong></td><td>Dual signal architecture</td><td>Common-cause failure &mdash; both signals from same timer</td><td>Single point: both servo A and relay fail simultaneously. No independent path.</td><td>5</td><td>3</td><td>5</td><td><strong>75</strong></td></tr>
+</table>
+<p style="font-size:0.8em;color:var(--dim)">Highest RPN: F-17 (75) &mdash; dual signal CCF &bull; F-03, F-12 (50 each) &mdash; transistor short and relay weld, both undetected &bull; F-16 (40) &mdash; brownout gap.</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ SECTION 6 -->
+<section id="s6">
+<h2>6. Risk Assessment Matrix (MIL-STD-882E)</h2>
+<p style="font-size:0.82em;color:var(--dim);margin-bottom:10px">Hover a cell to see hazards. Click to scroll to the hazard table. Hover a hazard row in §3 to highlight its cell.</p>
+<div style="overflow-x:auto">
+<table id="rmatrix" style="width:auto;margin:0">
+<tr>
+  <td class="ax-lbl" style="min-width:110px"></td>
+  <th class="ax-lbl">I&nbsp;Catastrophic</th>
+  <th class="ax-lbl">II&nbsp;Critical</th>
+  <th class="ax-lbl">III&nbsp;Marginal</th>
+  <th class="ax-lbl">IV&nbsp;Negligible</th>
+</tr>
+<tr>
+  <th class="ax-lbl">A&nbsp;Frequent</th>
+  <td class="risk-H" data-cell="A1"></td>
+  <td class="risk-H" data-cell="A2"></td>
+  <td class="risk-H" data-cell="A3"></td>
+  <td class="risk-M" data-cell="A4"></td>
+</tr>
+<tr>
+  <th class="ax-lbl">B&nbsp;Probable</th>
+  <td class="risk-H" data-cell="B1"></td>
+  <td class="risk-H" data-cell="B2"></td>
+  <td class="risk-S" data-cell="B3"></td>
+  <td class="risk-M" data-cell="B4"></td>
+</tr>
+<tr>
+  <th class="ax-lbl">C&nbsp;Occasional</th>
+  <td class="risk-H" data-cell="C1"></td>
+  <td class="risk-H" data-cell="C2" data-hazards="H-10,H-12"><span class="mmarker">H-10</span><span class="mmarker">H-12</span></td>
+  <td class="risk-M" data-cell="C3" data-hazards="H-08,H-09,H-11"><span class="mmarker">H-08</span><span class="mmarker">H-09</span><span class="mmarker">H-11</span></td>
+  <td class="risk-L" data-cell="C4"></td>
+</tr>
+<tr>
+  <th class="ax-lbl">D&nbsp;Remote</th>
+  <td class="risk-S" data-cell="D1" data-hazards="H-01,H-02"><span class="mmarker">H-01</span><span class="mmarker">H-02</span></td>
+  <td class="risk-M" data-cell="D2" data-hazards="H-07"><span class="mmarker">H-07</span></td>
+  <td class="risk-L" data-cell="D3"></td>
+  <td class="risk-L" data-cell="D4" data-hazards="H-05,H-06"><span class="mmarker">H-05</span><span class="mmarker">H-06</span></td>
+</tr>
+<tr>
+  <th class="ax-lbl">E&nbsp;Improbable</th>
+  <td class="risk-M" data-cell="E1" data-hazards="H-04"><span class="mmarker">H-04</span></td>
+  <td class="risk-M" data-cell="E2" data-hazards="H-03"><span class="mmarker">H-03</span></td>
+  <td class="risk-L" data-cell="E3"></td>
+  <td class="risk-E" data-cell="E4"></td>
+</tr>
+</table>
+</div>
+<div style="display:flex;gap:18px;margin-top:10px;font-size:0.78em;flex-wrap:wrap">
+  <span><span style="display:inline-block;width:10px;height:10px;background:#2a0808;border:1px solid #661111;margin-right:4px"></span>HIGH</span>
+  <span><span style="display:inline-block;width:10px;height:10px;background:#251000;border:1px solid #664422;margin-right:4px"></span>SERIOUS</span>
+  <span><span style="display:inline-block;width:10px;height:10px;background:#1e1800;border:1px solid #555522;margin-right:4px"></span>MEDIUM</span>
+  <span><span style="display:inline-block;width:10px;height:10px;background:#0a1e0e;border:1px solid #226633;margin-right:4px"></span>LOW</span>
+  <span><span style="display:inline-block;width:10px;height:10px;background:#141414;border:1px solid #334444;margin-right:4px"></span>ELIMINATED</span>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ SECTION 7 -->
+<section id="s7">
+<h2>7. Dual Synced Servo Signal Assessment</h2>
+<h3>7.1 Does Two Signals Equal Redundancy?</h3>
+<div class="callout callout-danger">
+<strong>No.</strong> Under IEC&nbsp;61508-2:2010 &sect;7.4.7 and Table&nbsp;3 (architectural constraints), redundancy requires independence of components, power domains, and failure modes. Two PWM outputs from the same MCU timer peripheral share silicon die, power supply, firmware, and PCB copper layer. They are a <strong>common-cause failure (CCF) group</strong>.<br><br>
+Per IEC&nbsp;61508-6 Annex&nbsp;D (&beta;-factor model): <strong>&beta;&nbsp;&ge;&nbsp;0.20</strong> for same-chip digital outputs <span class="est">[EST]</span>. This means at least 20&thinsp;% of failures affect both channels simultaneously. This directly caps the PFH improvement from signal duplication at 80&thinsp;% of one channel &mdash; the dangerous failure rate of the pair is dominated by the correlated fraction, not the independent fraction. The architecture is <strong>1oo1, not 1oo2</strong>.
+</div>
+
+<h3>7.2 Failure Modes Introduced by Synchronisation</h3>
+<table>
+<tr><th>Failure Mode</th><th>Mechanism</th><th>Risk</th></tr>
+<tr><td>Both signals stuck-ON (common cause)</td><td>Same timer peripheral freeze; same firmware bug; same power transient affecting both outputs simultaneously</td><td><span class="sev-cat sev-II">II Critical</span> &mdash; no independent de-energise path for either servo or relay</td></tr>
+<tr><td>Sync skew</td><td>ISR jitter, DMA latency, or interrupt contention causes the two outputs to have different pulse widths during the same 20&nbsp;ms frame</td><td><span class="sev-cat sev-III">III Marginal</span> &mdash; relay with narrow switching threshold may register wrong state during skew</td></tr>
+<tr><td>Stuck-on race condition</td><td>If transistor turns ON while both outputs are already at max pulse width, relay energises before servo reaches safe position. No independent cut path for one without the other.</td><td><span class="sev-cat sev-III">III Marginal</span> &mdash; mechanical relay arcing risk</td></tr>
+<tr><td>Common-cause output freeze window</td><td>PSM CR-5 loop-frozen watchdog drives SAFE_OUT_PIN LOW after 31&nbsp;ms. Both signals remain in last state during this window.</td><td>31&nbsp;ms exposure; acceptable if relay hold time &lt; 31&nbsp;ms, otherwise not</td></tr>
+</table>
+
+<h3>7.3 SIL Level Achievable vs PSM Target</h3>
+<table class="sil-tbl">
+<tr><th>Subsystem Element</th><th>Target SIL</th><th>Achievable SIL</th><th>Gap</th></tr>
+<tr><td>PSM upstream detection (dual IMU + AHRS + FSM)</td><td>SIL&nbsp;3</td><td class="ok">SIL&nbsp;3</td><td class="ok">None</td></tr>
+<tr><td>SAFE_OUT_PIN output integrity (readback + FAULT_OUTPUT)</td><td>SIL&nbsp;3</td><td class="ok">SIL&nbsp;3</td><td class="ok">None (readback implemented)</td></tr>
+<tr><td>Transistor gate stage (single device, no feedback)</td><td>SIL&nbsp;3</td><td class="gap">SIL&nbsp;1</td><td class="gap">&#9650; 2 SIL levels lost</td></tr>
+<tr><td>Servo PWM output (single peripheral, no feedback, no voted redundancy)</td><td>SIL&nbsp;3</td><td class="gap">SIL&nbsp;0&ndash;1</td><td class="gap">&#9650; 2&ndash;3 SIL levels lost</td></tr>
+<tr><td>Relay (contacts weld undetected)</td><td>SIL&nbsp;3</td><td class="gap">SIL&nbsp;0&ndash;1</td><td class="gap">&#9650; F-12 entirely undetected</td></tr>
+<tr style="background:#1e0a0a"><td><strong>Overall safety function (weakest link)</strong></td><td><strong>SIL&nbsp;3</strong></td><td class="gap"><strong>SIL&nbsp;1</strong></td><td class="gap"><strong>2 SIL levels below target</strong></td></tr>
+</table>
+<p style="font-size:0.82em;color:var(--dim)">Reference: IEC&nbsp;61508-1:2010 &sect;10 &mdash; "The SIL of a safety function is limited by the SIL of its weakest element."</p>
+
+<h3>7.4 Requirements to Improve to SIL&nbsp;2</h3>
+<p>The following changes are necessary (not optional) to raise the output channel from SIL&nbsp;1 to SIL&nbsp;2:</p>
+<ol style="padding-left:20px;font-size:0.88em;line-height:2">
+  <li>Independent hardware cut-off path (NC relay or second transistor in series) driven from a separate GPIO, independent of servo PWM lines</li>
+  <li>Transistor collector/drain voltage feedback to MCU ADC or comparator</li>
+  <li>Brownout detection enabled on iMXRT1062 or external BOD IC</li>
+  <li>Normally-closed relay in load path (fail-safe by de-energisation)</li>
+  <li>Servo PWM signals routed to different FlexPWM sub-modules (reduces CCF &beta;)</li>
+</ol>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ SECTION 8 -->
+<section id="s8">
+<h2>8. Recommendations</h2>
+<table>
+<tr><th style="width:28px">#</th><th style="width:90px">Priority</th><th>Recommendation</th><th>Rationale</th></tr>
+<tr><td>1</td><td><span class="tag tag-must">MUST</span></td><td>Add a second independent hardware cut-off (NC relay or SSR) in series with servo signal lines, driven by a separate GPIO</td><td>Closes H-02 / F-03: transistor short is currently a single undetected dangerous failure. Required for SIL&nbsp;2 per IEC&nbsp;61508 Table&nbsp;3.</td></tr>
+<tr><td>2</td><td><span class="tag tag-must">MUST</span></td><td>Wire transistor collector/drain to MCU ADC or comparator. Assert <span class="inline-code">FAULT_INTEGRITY</span> if collector HIGH when <span class="inline-code">SAFE_OUT_PIN</span> LOW.</td><td>Closes F-03 detection gap. Analogous to the existing SAFE_MON_PIN readback on pin&nbsp;3.</td></tr>
+<tr><td>3</td><td><span class="tag tag-must">MUST</span></td><td>Enable brownout detection: configure iMXRT1062 DCDC_REG3[TRG] threshold or add external BOD IC</td><td>Closes H-10 / F-16. No BOD is the highest-likelihood dangerous failure path at C (Occasional) likelihood.</td></tr>
+<tr><td>4</td><td><span class="tag tag-must">MUST</span></td><td>Add 10&nbsp;k&Omega; external pull-down resistor on SAFE_OUT_PIN net to ensure transistor turns off during MCU reset, GPIO float, and startup</td><td>Closes H-11. Should be on the transistor base/gate net, not on pin&nbsp;3 (SAFE_MON).</td></tr>
+<tr><td>5</td><td><span class="tag tag-should">SHOULD</span></td><td>Replace servo-signal relay with or supplement with a normally-closed (NC) relay in load path, energised to open (fail-safe by de-energisation)</td><td>Reverses F-12 failure mode direction: contact weld now means load de-energised (safe) rather than continuously powered (dangerous).</td></tr>
+<tr><td>6</td><td><span class="tag tag-should">SHOULD</span></td><td>Route the two servo PWM signals to different FlexPWM sub-modules on iMXRT1062 (e.g. FLEXPWM1 and FLEXPWM2)</td><td>Reduces CCF &beta;-factor for H-07 / F-17. Does not achieve true redundancy but measurably reduces correlated failure probability.</td></tr>
+<tr><td>7</td><td><span class="tag tag-should">SHOULD</span></td><td>Add servo position readback via analog feedback (potentiometer wiper) to a PSM analog input</td><td>Detects F-11 (seized servo) and enables closed-loop confirmation that safe position was reached within N ms of SAFE_OUT_PIN going LOW.</td></tr>
+<tr><td>8</td><td><span class="tag tag-should">SHOULD</span></td><td>Document system SIL constraint in safety requirements specification: "This safety function is limited to SIL&nbsp;1 by the output channel architecture until items 1&ndash;4 above are implemented."</td><td>Required by IEC&nbsp;61508-1 &sect;10 for traceability and to prevent design intent mismatch in future revisions.</td></tr>
+<tr><td>9</td><td><span class="tag tag-consider">CONSIDER</span></td><td>Add an external windowed watchdog IC with independent oscillator; enable input wired in series with SAFE_OUT_PIN net</td><td>Closes PSM single-WDT gap. Provides hardware-enforced time-out independent of MCU firmware or power supply state.</td></tr>
+<tr><td>10</td><td><span class="tag tag-consider">CONSIDER</span></td><td>Implement load current monitoring on relay output to detect F-12 (contacts welded) and F-13 (contacts open)</td><td>Closes the relay contact detection gap for both dangerous (welded) and safe (open) failure modes.</td></tr>
+</table>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════ SECTION 9 -->
+<section id="s9">
+<h2>9. Appendix</h2>
+<h3>9.1 PSM Fault Code Reference (safety_defs.h)</h3>
+<table>
+<tr><th>Hex</th><th>Name</th><th>Trigger Condition</th><th>Clear Method</th></tr>
+<tr><td><span class="inline-code">0x0001</span></td><td>FAULT_IMU_A_COMM</td><td>&ge; stale_fault_ticks consecutive failed reads; or 3&times; WHO_AM_I fail; or 3&times; config CRC-8 fail</td><td>imu_recover()</td></tr>
+<tr><td><span class="inline-code">0x0002</span></td><td>FAULT_IMU_B_COMM</td><td>Same for IMU-B</td><td>imu_recover()</td></tr>
+<tr><td><span class="inline-code">0x0004</span></td><td>FAULT_GYRO_RANGE</td><td>|&omega;| &gt; 248&nbsp;dps or NaN</td><td>5 clean eval periods</td></tr>
+<tr><td><span class="inline-code">0x0008</span></td><td>FAULT_ACCEL_RANGE</td><td>|a| &lt; 0.05&nbsp;g or &gt; 4.4&nbsp;g or NaN</td><td>5 clean eval periods</td></tr>
+<tr><td><span class="inline-code">0x0010</span></td><td>FAULT_OUTPUT</td><td>SAFE_MON reads LOW when HIGH commanded</td><td>Successful readback match</td></tr>
+<tr><td><span class="inline-code">0x0020</span></td><td>FAULT_FROZEN</td><td>Loop frozen &gt; 26 ISR ticks (~31&nbsp;ms)</td><td>imu_recover() or direct clear if loop alive</td></tr>
+<tr><td><span class="inline-code">0x0040</span></td><td>FAULT_TIMING</td><td>ISR period jitter &gt; &plusmn;5&thinsp;%</td><td>5 clean ISR ticks</td></tr>
+<tr><td><span class="inline-code">0x0080</span></td><td>FAULT_DIVERSE</td><td>Window mean accel mag &ne; 1&nbsp;g &plusmn; 0.1&nbsp;g</td><td>5 clean eval periods</td></tr>
+<tr><td><span class="inline-code">0x0100</span></td><td>FAULT_DUAL_DIVERGE</td><td>|roll_A&minus;roll_B| or |pitch_A&minus;pitch_B| &gt; 5&deg;</td><td>5 clean eval periods</td></tr>
+<tr><td><span class="inline-code">0x0200</span></td><td>FAULT_SELFTEST</td><td>Accel or gyro self-test out of band</td><td>imu_recover()</td></tr>
+<tr><td><span class="inline-code">0x0400</span></td><td>FAULT_INTEGRITY</td><td>Common-mode SPI lock (&ge;3 identical samples); stack &gt; 6&nbsp;KB; SAFE_MON stuck HIGH when LOW commanded</td><td>5 clean eval periods (auto-clear added in safety_isr.cpp)</td></tr>
+</table>
+
+<h3>9.2 Pin Map</h3>
+<table>
+<tr><th>Function</th><th>Teensy 4.1 Pin</th><th>Direction</th><th>Note</th></tr>
+<tr><td>SAFE_OUT_PIN</td><td>2</td><td>OUTPUT</td><td>Transistor gate drive; HIGH = stable</td></tr>
+<tr><td>SAFE_MON_PIN_HW</td><td>3</td><td>INPUT_PULLDOWN</td><td>Reads SAFE_OUT_PIN net via 100&nbsp;&Omega; series. Does NOT monitor transistor collector.</td></tr>
+<tr><td>IMU-A CS</td><td>10</td><td>OUTPUT</td><td>ASM330LHB-A chip select</td></tr>
+<tr><td>IMU-B CS</td><td>9</td><td>OUTPUT</td><td>ASM330LHB-B chip select</td></tr>
+<tr><td>IMU-A INT</td><td>8</td><td>INPUT</td><td>DRDY from IMU-A</td></tr>
+<tr><td>IMU-B INT</td><td>7</td><td>INPUT</td><td>DRDY from IMU-B</td></tr>
+<tr><td>LED</td><td>13</td><td>OUTPUT</td><td>Mirrors SAFE_OUT_PIN state</td></tr>
+<tr><td>Olight PWM (LIGHT_PIN)</td><td>4</td><td>OUTPUT (open-drain)</td><td>93.75&nbsp;Hz open-drain; existing. Do not use for new outputs.</td></tr>
+<tr><td>SPI1 MISO</td><td>1</td><td>INPUT</td><td>Shared both IMUs</td></tr>
+<tr><td>SPI1 MOSI</td><td>26</td><td>OUTPUT</td><td>4&nbsp;MHz SPI_MODE3</td></tr>
+<tr><td>SPI1 SCK</td><td>27</td><td>OUTPUT</td><td>4&nbsp;MHz SPI_MODE3</td></tr>
+<tr><td>Servo PWM A</td><td>User-defined (free)</td><td>OUTPUT</td><td>50&nbsp;Hz PWM; gated by transistor. Use FlexPWM1 sub-module.</td></tr>
+<tr><td>Servo PWM B</td><td>User-defined (free)</td><td>OUTPUT</td><td>Synced duplicate &mdash; use FlexPWM2 sub-module to reduce CCF &beta;.</td></tr>
+<tr><td>Transistor collector readback</td><td>User-defined (free, analog-capable)</td><td>INPUT</td><td><span class="tag tag-must">GAP</span> Not yet implemented. Required for Rec&nbsp;2.</td></tr>
+</table>
+</section>
+
+</main>
+</div>
+
+<div id="matrix-tip"></div>
+
+<footer>
+  <strong>Standards referenced:</strong> IEC&nbsp;61508-1/2/6:2010 &bull; IEC&nbsp;61025:2006 (FTA) &bull; IEC&nbsp;60812:2018 (FMEA) &bull; MIL-STD-882E:2012 &bull; IEC&nbsp;TR&nbsp;62380 (failure rates)<br>
+  All values marked <span class="est">[EST]</span> are engineering estimates based on failure rate databases and expert judgement. They are not measured values and do not constitute a formal IEC&nbsp;61508 quantitative assessment. A certified functional safety assessment requires a qualified assessor per IEC&nbsp;61508-1 &sect;8.
+</footer>
+
+<script>
+const HDESC={
+  'H-01':'PSM common-mode sensor failure — both IMUs report stable incorrectly',
+  'H-02':'Transistor base-emitter / gate-source short — conducts uncontrolled',
+  'H-03':'MCU PWM timer stuck HIGH — servo/relay continuously energised',
+  'H-04':'Servo signal wire shorted to V+ rail — external wiring fault',
+  'H-05':'Transistor open-circuit — safe failure, no actuation',
+  'H-06':'MCU PWM stuck LOW — safe failure, no actuation',
+  'H-07':'Both signals fail HIGH simultaneously — common-cause (same MCU)',
+  'H-08':'EMI noise on control line — servo jitter / spurious relay toggle',
+  'H-09':'Transistor leakage — partial servo torque when should be off',
+  'H-10':'Power brownout — MCU erratic pre-reset, SAFE_OUT_PIN undefined',
+  'H-11':'GPIO float during WDT reset — transistor state undefined',
+  'H-12':'No output diversity — transistor is sole hardware cut-off (single point)'
+};
+const tip=document.getElementById('matrix-tip');
+document.querySelectorAll('#rmatrix [data-hazards]').forEach(cell=>{
+  cell.style.cursor='pointer';
+  cell.addEventListener('mousemove',e=>{
+    const ids=cell.dataset.hazards.split(',');
+    tip.innerHTML='<strong>'+ids.join(', ')+'</strong><br>'+ids.map(id=>HDESC[id]||id).join('<br>');
+    tip.style.display='block';
+    tip.style.left=(e.clientX+14)+'px';
+    tip.style.top=(e.clientY+10)+'px';
+  });
+  cell.addEventListener('mouseleave',()=>{tip.style.display='none'});
+  cell.addEventListener('click',()=>{
+    const first=cell.dataset.hazards.split(',')[0];
+    const el=document.getElementById('hz-'+first);
+    if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.style.outline='1px solid #44aaff';setTimeout(()=>el.style.outline='',1500);}
+  });
+});
+document.querySelectorAll('#s3 tr[id^="hz-"]').forEach(row=>{
+  const id=row.id.replace('hz-','');
+  const cell=document.querySelector('#rmatrix [data-hazards*="'+id+'"]');
+  if(cell){
+    row.addEventListener('mouseenter',()=>cell.style.outline='2px solid #44aaff');
+    row.addEventListener('mouseleave',()=>cell.style.outline='');
+  }
+});
+const secs=['s1','s2','s3','s4','s5','s6','s7','s8','s9'];
+const links=document.querySelectorAll('#snav a');
+if('IntersectionObserver' in window){
+  const obs=new IntersectionObserver(entries=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){
+        links.forEach(l=>l.classList.remove('active'));
+        const a=document.querySelector('#snav a[href="#'+e.target.id+'"]');
+        if(a)a.classList.add('active');
+      }
+    });
+  },{threshold:0.25});
+  secs.forEach(id=>{const el=document.getElementById(id);if(el)obs.observe(el);});
+}
+</script>
+</body>
+</html>
